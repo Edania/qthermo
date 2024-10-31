@@ -1,0 +1,7 @@
+echo "Patching SVG files..."
+python patch_svg.py -o "C:\Users\elsad\Documents\Design\transmission_nonthermal.svg" "figs\transmission_nonthermal.svg"
+python patch_svg.py -o "C:\Users\elsad\Documents\Design\transmission_thermal.svg" "figs\transmission_thermal.svg"
+python patch_svg.py -o "C:\Users\elsad\Documents\Design\sliced_eff_thermal.svg" "figs\sliced_eff_thermal.svg"
+python patch_svg.py -o "C:\Users\elsad\Documents\Design\sliced_eff_nonthermal.svg" "figs\sliced_eff_nonthermal.svg"
+python patch_svg.py -o "C:\Users\elsad\Documents\Design\dist_thermal.svg" "figs\dist_thermal.svg"
+python patch_svg.py -o "C:\Users\elsad\Documents\Design\dist_nonthermal.svg" "figs\dist_nonthermal.svg"
