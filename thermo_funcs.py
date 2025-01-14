@@ -159,7 +159,7 @@ def calc_dP_dtau(E, muL, TL, muR, TR, occupf_L = fermi_dist, occupf_R= fermi_dis
     return dP_dtau
 
 
-def slice_current_integral(transf,E_mids,muL, TL ,muR, TR, deltaE, occupf_L = fermi_dist, occupf_R=fermi_dist,type = "electric", return_integrands = False):
+def slice_current_integral(transf,E_mids,muL, TL ,muR, TR, occupf_L = fermi_dist, occupf_R=fermi_dist,type = "electric", return_integrands = False):
     if type == "electric":
         coeff = lambda E: e
     elif type == "heat":
@@ -182,6 +182,7 @@ def slice_current_integral(transf,E_mids,muL, TL ,muR, TR, deltaE, occupf_L = fe
     #print(coeff(E_mids))
     #print(transf)
     #print(occupdiff)
+    deltaE = E_mids[1]-E_mids[0]
     integrands = 1/h*coeff(E_mids)*transf*occupdiff*deltaE
     #if np.any(integrands < 0):
     #    current = -100
