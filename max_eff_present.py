@@ -30,23 +30,23 @@ def produce_graphs(occupf_L, suffix, filetype):
     
     power_band = heatL_band+heatR_band
     eff_band = power_band/heatL_band
-    Jprim, Pprim, dJdT,dPdT = tf.calc_dJR_dP_dmu(transf_band,E_range,muL,TL,muR,TR,deltaE,occupf_L)
+    Jprim, Pprim, dJdT,dPdT = tf.calc_dJR_dP_dmu(transf_band,E_range,muL,TL,muR,TR,occupf_L)
     print(E1_band-(muL*(1 - Jprim/Pprim)))
 
     # Optimize with arbitrary transmission function
     init_transf = np.random.uniform(0,1,len(small_E_range))
-    res = minimize(tf.slice_maximize_eff, init_transf, args = (small_E_range, muL, TL ,muR, TR, small_deltaE,occupf_L ), bounds=(((0,1),)*len(small_E_range)),
-            constraints = [{'type':'eq', 'fun': tf.slice_pow_constraint, 'args':(small_E_range, muL, TL ,muR, TR, small_deltaE,target_power,occupf_L)}])
+    res = minimize(tf.slice_maximize_eff, init_transf, args = (small_E_range, muL, TL ,muR, TR,occupf_L ), bounds=(((0,1),)*len(small_E_range)),
+            constraints = [{'type':'eq', 'fun': tf.slice_pow_constraint, 'args':(small_E_range, muL, TL ,muR, TR,target_power,occupf_L)}])
     transf_gen = res.x
-    heatL_gen = tf.slice_current_integral(transf_gen,small_E_range,muL,TL,muR,TR, small_deltaE,occupf_L, type = "heat")
-    heatR_gen = tf.slice_current_integral(transf_gen,small_E_range,muL,TL,muR,TR, small_deltaE,occupf_L, type = "heatR")
-    electric_gen = tf.slice_current_integral(transf_gen,small_E_range,muL,TL,muR,TR, small_deltaE,occupf_L, type = "electric")
+    heatL_gen = tf.slice_current_integral(transf_gen,small_E_range,muL,TL,muR,TR,occupf_L, type = "heat")
+    heatR_gen = tf.slice_current_integral(transf_gen,small_E_range,muL,TL,muR,TR,occupf_L, type = "heatR")
+    electric_gen = tf.slice_current_integral(transf_gen,small_E_range,muL,TL,muR,TR,occupf_L, type = "electric")
     power_gen = heatL_gen+heatR_gen
     eff_gen = power_gen/heatL_gen
     el_power_gen = -(muL-muR)*electric_gen
     # Optimize by solving equation for constant
 
-    res1 = fsolve(tf.opt_transf, 0.4, args=(E_range, muL, TL, muR, TR, target_power, deltaE, occupf_L), factor = 1, maxfev=1000)
+    res1 = fsolve(tf.opt_transf, 0.4, args=(E_range, muL, TL, muR, TR, target_power, occupf_L), factor = 1, maxfev=1000)
 
     c_eta = res1[0]
 
@@ -56,10 +56,10 @@ def produce_graphs(occupf_L, suffix, filetype):
     transf_ceta[mom_etas > c_eta] = 1
     transf_ceta[occupdiff < 0] = 0
     #transf_ceta = np.ones_like(E_range)
-    electric_ceta, integrands = tf.slice_current_integral(transf_ceta,E_range, muL, TL ,muR, TR, deltaE, occupf_L,type = "electric", return_integrands=True)
+    electric_ceta, integrands = tf.slice_current_integral(transf_ceta,E_range, muL, TL ,muR, TR, occupf_L,type = "electric", return_integrands=True)
     #print(integrands)
-    heatL_ceta, heatL_inters = tf.slice_current_integral(transf_ceta, E_range, muL, TL ,muR, TR, deltaE, occupf_L, type = "heat", return_integrands=True)
-    heatR_ceta, heatR_inters = tf.slice_current_integral(transf_ceta, E_range, muL, TL ,muR, TR, deltaE, occupf_L, type = "heatR", return_integrands=True)
+    heatL_ceta, heatL_inters = tf.slice_current_integral(transf_ceta, E_range, muL, TL ,muR, TR, occupf_L, type = "heat", return_integrands=True)
+    heatR_ceta, heatR_inters = tf.slice_current_integral(transf_ceta, E_range, muL, TL ,muR, TR, occupf_L, type = "heatR", return_integrands=True)
     power_ceta = heatL_ceta+heatR_ceta
     eff_ceta = power_ceta/heatL_ceta
     el_power_ceta = -(muL-muR)*electric_ceta
@@ -110,7 +110,7 @@ def produce_graphs(occupf_L, suffix, filetype):
 
     fig = plt.figure(figsize=(4.5,4))
 
-    plt.bar(small_E_range, transf_gen, align='edge', width=small_deltaE, label = "Gen. opt.", zorder =1)
+    plt.bar(small_E_range, transf_gen, align='edge', width=small_E_range[1]-small_E_range[0], label = "Gen. opt.", zorder =1)
     plt.plot(E_range, transf_ceta, 'red', zorder =2, label = fr"$c_\eta$ opt.")
     plt.plot(E_range, transf_band, '--',color = 'black', alpha = 1, label = "BP opt.", zorder = 3)
     plt.title(f"Transmission for\n maximized efficiency, {suffix}")
@@ -128,6 +128,7 @@ def produce_graphs(occupf_L, suffix, filetype):
     else:
         axs.plot(E_range, tf.fermi_dist(E_range, muL, TL), '--', label = "L Fermi", zorder = 2)
         axs.plot(E_range, occupf_L(E_range,muL, TL), label = "L dist.", zorder = 3)
+        axs.plot(E_range, transf_ceta, 'red', zorder =4, label = fr"$c_\eta$ opt.")
     
     axs.set_title(fr"Distribution functions, $\Delta \mu/k_b \bar T = ${muL:.3f}")
     axs.set_xlabel(fr"Electron energy/$k_B \bar T$")
@@ -201,10 +202,10 @@ if __name__ == "__main__":
     tf.N = N
     target_power = 0.6*tf.pmax(TL,TR)
     small_E_range = np.linspace(-1,5,100)
-    small_deltaE = small_E_range[1]-small_E_range[0]
+    #small_deltaE = small_E_range[1]-small_E_range[0]
     
     E_range = np.linspace(-1,5,100000)
-    deltaE = E_range[1]-E_range[0]
+    #deltaE = E_range[1]-E_range[0]
     
     ## THERMAL CASE ##
     th_occupf_L = tf.fermi_dist

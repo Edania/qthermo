@@ -192,11 +192,11 @@ def slice_current_integral(transf,E_mids,muL, TL ,muR, TR, occupf_L = fermi_dist
         return current, integrands
     return current
     
-def slice_maximize_eff(transf, E_mids, muL, TL ,muR, TR, deltaE,occupf_L = fermi_dist, occupf_R=fermi_dist):
+def slice_maximize_eff(transf, E_mids, muL, TL ,muR, TR,occupf_L = fermi_dist, occupf_R=fermi_dist):
     #electric, integrands = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE, occupf_L, occupf_R,type = "electric", return_integrands=True)
 
-    heat = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE, occupf_L,occupf_R,type = "heat")
-    heatR = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE,occupf_L,occupf_R,type = "heatR")
+    heat = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, occupf_L,occupf_R,type = "heat")
+    heatR = slice_current_integral(transf, E_mids, muL, TL ,muR, TR,occupf_L,occupf_R,type = "heatR")
     power = heat + heatR#-e*(muL-muR)*electric
     #if heat == 0:
     #    return np.inf
@@ -206,8 +206,8 @@ def slice_maximize_eff(transf, E_mids, muL, TL ,muR, TR, deltaE,occupf_L = fermi
     return -eff
 
 
-def slice_maximize_power(transf, E_mids, muL, TL ,muR, TR, deltaE,occupf_L = fermi_dist):
-    electric = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE, occupf_L,type = "electric")
+def slice_maximize_power(transf, E_mids, muL, TL ,muR, TR,occupf_L = fermi_dist):
+    electric = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, occupf_L,type = "electric")
     power = -e*(muL-muR)*electric
     #if target_eff > 0:
     #    heat = w_simple_current(E, deltamu, deltaT, type = "heat")
@@ -222,11 +222,11 @@ def slice_eff_constraint(transf, E_mids, muL, TL ,muR, TR, deltaE, target_eff,oc
     eff = power/heat if heat != 0 else -1
     return target_eff - eff
 
-def slice_pow_constraint(transf, E_mids, muL, TL, muR, TR, deltaE, target_pow, occupf_L = fermi_dist):
+def slice_pow_constraint(transf, E_mids, muL, TL, muR, TR, target_pow, occupf_L = fermi_dist):
 #    electric = slice_current_integral(transf,E_mids, muL, TL ,muR, TR, deltaE, type = "electric")
 #    power = -e*(muL-muR)*electric
-    heat = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE, occupf_L,type = "heat")
-    heatR = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE,occupf_L,type = "heatR")
+    heat = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, occupf_L,type = "heat")
+    heatR = slice_current_integral(transf, E_mids, muL, TL ,muR, TR,occupf_L,type = "heatR")
     power = heat + heatR#-e*(muL-muR)*electricpower = -e*(muL-muR)*electric
     return target_pow-power
 
@@ -251,17 +251,17 @@ def pertub_fermi(E, muL, TL, pertub):
             dist = 1
     return dist
 
-def calc_dJR_dP_dmu(transf, E, muL, TL, muR, TR, deltaE,occupf_L = fermi_dist, h = 0.01):
+def calc_dJR_dP_dmu(transf, E, muL, TL, muR, TR,occupf_L = fermi_dist, h = 0.01):
     if muR != 0:
         print("only for muR = 0 right now :(")
         return -1,-1
     mus = [muL-h, muL+h]
-    [heatL_lowmu, heatL_highmu] = [slice_current_integral(transf, E, mus[0], TL, muR, TR, deltaE, occupf_L, type = "heat"),slice_current_integral(transf, E, mus[1], TL, muR, TR, deltaE, occupf_L, type = "heat")]
-    [heatR_lowmu, heatR_highmu] = [slice_current_integral(transf, E, mus[0], TL, muR, TR, deltaE, occupf_L, type = "heatR"),slice_current_integral(transf, E, mus[1], TL, muR, TR, deltaE, occupf_L, type = "heatR")]
+    [heatL_lowmu, heatL_highmu] = [slice_current_integral(transf, E, mus[0], TL, muR, TR, occupf_L, type = "heat"),slice_current_integral(transf, E, mus[1], TL, muR, TR, occupf_L, type = "heat")]
+    [heatR_lowmu, heatR_highmu] = [slice_current_integral(transf, E, mus[0], TL, muR, TR, occupf_L, type = "heatR"),slice_current_integral(transf, E, mus[1], TL, muR, TR, occupf_L, type = "heatR")]
     TLs = [TL-h/2, TL+h/2]
     TRs = [TR+h/2, TR-h/2]
-    [heatL_lowT, heatL_highT] = [slice_current_integral(transf, E, muL, TLs[0], muR, TRs[0], deltaE, occupf_L, type = "heat"),slice_current_integral(transf, E, muL, TLs[1], muR, TRs[1], deltaE, occupf_L, type = "heat")]
-    [heatR_lowT, heatR_highT] = [slice_current_integral(transf, E, muL, TLs[0], muR, TRs[0], deltaE, occupf_L, type = "heatR"),slice_current_integral(transf, E, muL, TLs[1], muR, TRs[1], deltaE, occupf_L, type = "heatR")]
+    [heatL_lowT, heatL_highT] = [slice_current_integral(transf, E, muL, TLs[0], muR, TRs[0], occupf_L, type = "heat"),slice_current_integral(transf, E, muL, TLs[1], muR, TRs[1], occupf_L, type = "heat")]
+    [heatR_lowT, heatR_highT] = [slice_current_integral(transf, E, muL, TLs[0], muR, TRs[0], occupf_L, type = "heatR"),slice_current_integral(transf, E, muL, TLs[1], muR, TRs[1], occupf_L, type = "heatR")]
     #print(heatR_high)
     #print(heatR_low)
     #print(heatL_high+heatR_high)
@@ -429,7 +429,7 @@ def opt_transf_weird(c_eta, r_E, muL, TL, muR, TR, target_p, deltaE, foccup_L):
     #print(power)
     print(c_eta)
     return power - target_p
-def opt_transf(c_eta, r_E, muL, TL, muR, TR, target_p, deltaE, foccup_L):
+def opt_transf(c_eta, r_E, muL, TL, muR, TR, target_p, foccup_L):
     mom_etas = (r_E-entropy_coeff(r_E, muL, TL, foccup_L))/(-entropy_coeff(r_E, muL, TL, foccup_L))
     
     occupdiff = foccup_L(r_E,muL,TL)- fermi_dist(r_E,muR,TR)
@@ -437,7 +437,7 @@ def opt_transf(c_eta, r_E, muL, TL, muR, TR, target_p, deltaE, foccup_L):
     transf = np.zeros_like(mom_etas)
     transf[mom_etas > c_eta] = 1
     transf[occupdiff < 0] = 0
-    heatL = slice_current_integral(transf, r_E, muL, TL, muR, TR, deltaE, foccup_L, type = "heat")
-    heatR = slice_current_integral(transf, r_E, muL, TL, muR, TR, deltaE, foccup_L, type = "heatR")
+    heatL = slice_current_integral(transf, r_E, muL, TL, muR, TR, foccup_L, type = "heat")
+    heatR = slice_current_integral(transf, r_E, muL, TL, muR, TR, foccup_L, type = "heatR")
     power = heatL+heatR
     return power - target_p
