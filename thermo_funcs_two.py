@@ -149,8 +149,8 @@ def correct_Jprim_Pprim(E0,E1,muL_real, TL, muR_real, TR):
 
     return (float(Jprim), float(Pprim), float(JL), float(P)) 
 
-def entropy_coeff(E, muL, TL, occupf_L = fermi_dist):
-    coeff = -kb*TL*np.log(occupf_L(E, muL, TL)/(1-occupf_L(E, muL, TL)))
+def entropy_coeff(E, occupf_L):
+    coeff = -kb*np.log(occupf_L(E)/(1-occupf_L(E)))
     return coeff
 
 def heat_L_coeff(E,muL):
@@ -186,15 +186,9 @@ def slice_pow_constraint(transf, E_mids,occupf_L, occupf_R, coeff, target):
     current = slice_current_integral(transf, E_mids,occupf_L, occupf_R, coeff)
     return target-current
 
-def slice_constraint(transf, E_mids, muL, TL, muR, TR, deltaE):
-    electric, integrands = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE,type = "heat", return_integrands=True)
-    sgn_integrands = np.sign(integrands[np.argwhere(integrands != 0)]).flatten()-1#np.sign(np.where(integrands != 0)[0])-1
-    #print(sgn_integrands)
-    print(np.sum(sgn_integrands))
-    return np.sum(sgn_integrands)
 
-def pertub_fermi(E, muL, TL, pertub):
-    fermi = fermi_dist(E,muL,TL)
+def pertub_dist(E, dist, pertub):
+    fermi = dist(E)
     #pertub = fpertub(E)
     dist = fermi + pertub
     if type(dist) == np.ndarray:
@@ -206,3 +200,37 @@ def pertub_fermi(E, muL, TL, pertub):
         elif dist > 1:
             dist = 1
     return dist
+
+def transmission_avg_avg(C, E_mids, occupf_L, occupf_R, coeff_in, coeff_out):
+    in_integrands = coeff_in(E_mids)*(occupf_L(E_mids)- occupf_R(E_mids))
+    out_integrands = coeff_out(E_mids)*(occupf_L(E_mids)- occupf_R(E_mids))
+    transf = np.heaviside(coeff_out(E_mids)/coeff_in(E_mids) - C, 0)*np.heaviside(out_integrands, 0)*np.heaviside(in_integrands, 0)
+    return transf
+
+def transmission_avg_noise(C, E_mids, occupf_L, occupf_R, coeff):
+    integrands = coeff(E_mids)*(occupf_L(E_mids)- occupf_R(E_mids))
+    transf = np.heaviside((occupf_L(E_mids) - occupf_R(E_mids))/(coeff(E_mids)*(occupf_L(E_mids) *(1-occupf_L(E_mids)) + occupf_R(E_mids)*(1-occupf_R(E_mids)))) - C, 0)*np.heaviside(integrands, 0)
+    return transf
+
+def general_opt_avg_avg(C_init,target,E_mids,occupf_L, occupf_R, coeff_in, coeff_out, fixed = "out"):
+    '''
+    Make sure coeffs are defined such that positive contributions to currents are desirable and negative suppressed
+    '''
+    transf = lambda C: transmission_avg_avg(C, E_mids, occupf_L, occupf_R, coeff_in, coeff_out)
+    if fixed == "out":
+        coeff = coeff_out
+    else:
+        coeff = coeff_in
+
+    fixed_current_eq = lambda C: slice_current_integral(transf(C),E_mids,occupf_L, occupf_R,coeff_out) - target
+
+    res = fsolve(fixed_current_eq,C_init, factor = 0.1)
+
+    return res[0]
+
+def general_opt_avg_noise(C_init, target,E_mids,occupf_L, occupf_R, coeff):
+    transf = lambda C: transmission_avg_noise(C, E_mids, occupf_L, occupf_R, coeff)
+    fixed_current_eq = lambda C: slice_current_integral(transf(C),E_mids,occupf_L, occupf_R,coeff) - target
+    res = fsolve(fixed_current_eq,C_init)
+    return res[0]
+
