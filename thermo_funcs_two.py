@@ -14,7 +14,7 @@ def fermi_dist(E, mu, T):
     f_dist = 1/(1+np.exp((E-mu)/(T*kb)))
     return f_dist
 
-def current_integral(E_low, E_high, muL, TL, muR, TR, transf, occupf_L = fermi_dist, occupf_R = fermi_dist, type = "electric"):
+def current_integral_old(E_low, E_high, muL, TL, muR, TR, transf, occupf_L = fermi_dist, occupf_R = fermi_dist, type = "electric"):
     if type == "electric":
         coeff = lambda E: e
     elif type == "heat":
@@ -34,7 +34,11 @@ def current_integral(E_low, E_high, muL, TL, muR, TR, transf, occupf_L = fermi_d
     integrand = lambda E: 1/h*coeff(E)*transf(E)*(occupdiff(E))
     current, err = integrate.quad(integrand, E_low, E_high, args=())
     return current
+def current_integral(E_low,E_high,occupf_L, occupf_R, coeff, transf):
 
+    integrand = lambda E: 1/h*coeff(E)*transf(E)*(occupf_L(E)- occupf_R(E))
+    current, err = integrate.quad(integrand, E_low, E_high, args=())
+    return current
 # To make sure that we are in the heat engine regime (optimizing gets weird otherwise.)
 # However this constraint seems to lead to a badly behaved problem. It could be better/easier to filter the output data afterwards to remove the results where power < 0
 def carnot(TL,TR):
@@ -201,36 +205,36 @@ def pertub_dist(E, dist, pertub):
             dist = 1
     return dist
 
-def transmission_avg_avg(C, E_mids, occupf_L, occupf_R, coeff_in, coeff_out):
-    in_integrands = coeff_in(E_mids)*(occupf_L(E_mids)- occupf_R(E_mids))
-    out_integrands = coeff_out(E_mids)*(occupf_L(E_mids)- occupf_R(E_mids))
-    transf = np.heaviside(coeff_out(E_mids)/coeff_in(E_mids) - C, 0)*np.heaviside(out_integrands, 0)*np.heaviside(in_integrands, 0)
+def transmission_avg_avg(C, E, occupf_L, occupf_R, coeff_in, coeff_out):
+    in_integrands = coeff_in(E)*(occupf_L(E)- occupf_R(E))
+    out_integrands = coeff_out(E)*(occupf_L(E)- occupf_R(E))
+    transf = np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands, 0)*np.heaviside(in_integrands, 0)
     return transf
 
-def transmission_avg_noise(C, E_mids, occupf_L, occupf_R, coeff):
-    integrands = coeff(E_mids)*(occupf_L(E_mids)- occupf_R(E_mids))
-    transf = np.heaviside((occupf_L(E_mids) - occupf_R(E_mids))/(coeff(E_mids)*(occupf_L(E_mids) *(1-occupf_L(E_mids)) + occupf_R(E_mids)*(1-occupf_R(E_mids)))) - C, 0)*np.heaviside(integrands, 0)
+def transmission_avg_noise(C, E, occupf_L, occupf_R, coeff):
+    integrands = coeff(E)*(occupf_L(E)- occupf_R(E))
+    transf = np.heaviside((occupf_L(E) - occupf_R(E))/(coeff(E)*(occupf_L(E) *(1-occupf_L(E)) + occupf_R(E)*(1-occupf_R(E)))) - C, 0)*np.heaviside(integrands, 0)
     return transf
 
-def general_opt_avg_avg(C_init,target,E_mids,occupf_L, occupf_R, coeff_in, coeff_out, fixed = "out"):
+def general_opt_avg_avg(C_init,target,E_low, E_high,occupf_L, occupf_R, coeff_in, coeff_out, fixed = "out"):
     '''
     Make sure coeffs are defined such that positive contributions to currents are desirable and negative suppressed
     '''
-    transf = lambda C: transmission_avg_avg(C, E_mids, occupf_L, occupf_R, coeff_in, coeff_out)
+    transf = lambda C,E: transmission_avg_avg(C, E, occupf_L, occupf_R, coeff_in, coeff_out)
     if fixed == "out":
         coeff = coeff_out
     else:
         coeff = coeff_in
 
-    fixed_current_eq = lambda C: slice_current_integral(transf(C),E_mids,occupf_L, occupf_R,coeff_out) - target
+    fixed_current_eq = lambda C: current_integral(E_low, E_high,occupf_L, occupf_R,coeff_out,lambda E:transf(C,E)) - target
 
     res = fsolve(fixed_current_eq,C_init, factor = 0.1)
 
     return res[0]
 
-def general_opt_avg_noise(C_init, target,E_mids,occupf_L, occupf_R, coeff):
-    transf = lambda C: transmission_avg_noise(C, E_mids, occupf_L, occupf_R, coeff)
-    fixed_current_eq = lambda C: slice_current_integral(transf(C),E_mids,occupf_L, occupf_R,coeff) - target
+def general_opt_avg_noise(C_init, target,E_low, E_high,occupf_L, occupf_R, coeff):
+    transf = lambda C,E: transmission_avg_noise(C, E, occupf_L, occupf_R, coeff)
+    fixed_current_eq = lambda C: current_integral(E_low, E_high,occupf_L, occupf_R,coeff,lambda E:transf(C,E)) - target
     res = fsolve(fixed_current_eq,C_init)
     return res[0]
 
