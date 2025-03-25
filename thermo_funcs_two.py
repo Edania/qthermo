@@ -10,6 +10,95 @@ kb = 1
 e = 1
 N = 1
 ## FUNCTION DEFINITIONS ##
+
+
+class two_terminals:
+    def __init__(self, E_low, E_high, transf = None, occupf_L = None, occupf_R = None,  muL = 0, TL = 1, muR = 0, TR = 1):
+        '''
+        occupf_L, occupf_R and transf must be functions of E, energy
+        '''
+
+        self.E_low = E_low
+        self.E_high = E_high
+        self.muL = muL
+        self.muR = muR
+        self.TL = TL
+        self.TR = TR
+        if transf == None:
+            self.set_full_transmission()
+        else:
+            self.transf = transf
+        if occupf_L == None:
+            self.set_fermi_dist_left()
+        else:
+            self.occupf_L = occupf_L
+        if occupf_R == None:
+            self.set_fermi_dist_right()
+        else:
+            self.occupf_R = occupf_R
+    
+    def set_full_transmission(self):
+        self.transf = lambda E: 1
+
+    def set_fermi_dist_left(self):
+        self.occupf_L = lambda E: fermi_dist(E, self.muL, self.TL)
+    
+    def set_fermi_dist_right(self):
+        self.occupf_R = lambda E: fermi_dist(E, self.muR, self.TR)
+
+    def _current_integral(self, coeff):
+        integrand = lambda E: 1/h*coeff(E)*self.transf(E)*(self.occupf_L(E)- self.occupf_R(E))
+        current, err = integrate.quad(integrand, self.E_low, self.E_high, args=())
+        return current
+
+    def noise_cont(self, coeff):
+        thermal = lambda E: coeff(E)**2*self.transf(E)*(self.occupf_L(E)*(1-self.occupf_L(E))+ self.occupf_R(E)*(1-self.occupf_R(E)))
+        shot = lambda E: coeff(E)**2 * self.transf(E)*(1-self.transf(E))*(self.occupf_L(E)+self.occupf_R(E))**2
+        integrand = lambda E: thermal(E) + shot(E)
+        current, err = integrate.quad(integrand, self.E_low, self.E_high, args=())
+        return current
+    
+    def _transmission_avg(self, C, coeff_in, coeff_out):
+        in_integrands = lambda E: coeff_in(E)*(self.occupf_L(E)- self.occupf_R(E))
+        out_integrands = lambda E: coeff_out(E)*(self.occupf_L(E)- self.occupf_R(E))
+        #transf = lambda E: np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E)*in_integrands(E), 0)+np.heaviside(-coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E)*in_integrands(E), 0)
+        transf = lambda E: np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E),0)* np.heaviside(in_integrands(E), 0)
+        return transf
+
+    def _transmission_noise(self, C, coeff):
+        integrands = lambda E: coeff(E)*(self.occupf_L(E)- self.occupf_R(E))
+        comp = lambda E: (self.occupf_L(E) - self.occupf_R(E))/(coeff(E)*(self.occupf_L(E) *(1-self.occupf_L(E)) + self.occupf_R(E)*(1-self.occupf_R(E))))
+        transf = lambda E: np.heaviside(comp(E) - C, 0)*np.heaviside(integrands, 0) \
+                #+np.heaviside(- (comp - C), 0)*np.heaviside(-integrands, 0)
+        return transf
+
+    def general_opt_avg(self, C_init,target,E_low, E_high,occupf_L, occupf_R, coeff_in, coeff_out, fixed = "out"):
+        '''
+        Make sure coeffs are defined such that positive contributions to currents are desirable and negative suppressed
+        '''
+        transf = lambda C: self._transmission_avg(C, coeff_in, coeff_out)
+        if fixed == "out":
+            coeff = coeff_out
+        else:
+            coeff = coeff_in
+
+        fixed_current_eq = lambda C: current_integral(E_low, E_high,occupf_L, occupf_R,coeff_out,transf(C)) - target
+
+        res = fsolve(fixed_current_eq,C_init, factor = 0.1)
+
+        return res[0]
+
+    def general_opt_noise(C_init, target,E_low, E_high,occupf_L, occupf_R, coeff):
+        transf = lambda C,E: transmission_noise(C, E, occupf_L, occupf_R, coeff)
+        fixed_current_eq = lambda C: current_integral(E_low, E_high,occupf_L, occupf_R,coeff,lambda E:transf(C,E)) - target
+        res = fsolve(fixed_current_eq,C_init)
+        return res[0]
+
+
+
+
+
+
 def fermi_dist(E, mu, T):
     f_dist = 1/(1+np.exp((E-mu)/(T*kb)))
     return f_dist
@@ -35,8 +124,14 @@ def current_integral_old(E_low, E_high, muL, TL, muR, TR, transf, occupf_L = fer
     current, err = integrate.quad(integrand, E_low, E_high, args=())
     return current
 def current_integral(E_low,E_high,occupf_L, occupf_R, coeff, transf):
-
     integrand = lambda E: 1/h*coeff(E)*transf(E)*(occupf_L(E)- occupf_R(E))
+    current, err = integrate.quad(integrand, E_low, E_high, args=())
+    return current
+
+def noise_cont(E_low,E_high,occupf_L, occupf_R, coeff, transf):
+    thermal = lambda E: coeff(E)**2*transf(E)*(occupf_L(E)*(1-occupf_L(E))+ occupf_R(E)*(1-occupf_R(E)))
+    shot = lambda E: coeff(E)**2 * transf(E)*(1-transf(E))*(occupf_L(E)+occupf_R(E))**2
+    integrand = lambda E: thermal(E) + shot(E)
     current, err = integrate.quad(integrand, E_low, E_high, args=())
     return current
 # To make sure that we are in the heat engine regime (optimizing gets weird otherwise.)
@@ -75,83 +170,6 @@ def constrain_pgen(theta, TL, muR, TR, occupf_L, target_p):
     heatR = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heatR")
     pgen = heatL + heatR
     return pgen - target_p
-
-
-def correct_E1(E_range, muL, TL, muR, TR, occupf_L, target_p):
-    def GL(E):
-        return kb*TL/h * np.log(1+np.exp(-(E-muL)/(kb*TL)))
-    def GR(E):
-        return kb*TR/h * np.log(1+np.exp(-(E-muR)/(kb*TR)))
-    E0 = E_max(muL, TL, muR, TR)
-    GL_0 = GL(E0)
-    GR_0 = GR(E0)
-    #print(FL_prim_0)
-    def e_solver(E1):
-        #transf = np.zeros_like(E_range)
-        #transf[E_range > E0] = 1
-        #transf[E_range > E1] = 0
-        #heatL = slice_current_integral(transf, E_range, muL, TL ,muR, TR, E_range[1]-E_range[0], occupf_L, type = "heat")
-        #heatR = slice_current_integral(transf, E_range, muL, TL ,muR, TR, E_range[1]-E_range[0], occupf_L, type = "heatR")
-        heatL = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heat")
-        heatR = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heatR")
-        pgen = heatL + heatR
-        #pgen = muL*(-GL_0+GR_0+GL(E1)-GR(E1))
-        #print(pgen)
-        return pgen - target_p
-        #J_prim = FL_prim_0 - FL_prim(E1)
-        #P_prim = e*(GL_0+GR_0-GL(E1)-GR(E1)) + muL*(GL_prim_0-GL_prim(E1))
-        #if P_prim == 0:
-        #    return E0
-        #print(GL_0+GR_0-GL(E1)-GR(E1))
-        #print((J_prim/P_prim))
-        #return float((-(1-J_prim/P_prim)*muL - E1)[0])
-
-    res = fsolve(e_solver, E0*5)
-    return res[0] 
-
-def correct_Jprim_Pprim(E0,E1,muL_real, TL, muR_real, TR):
-    deltamu = muL_real - muR_real
-    muR = 0
-    muL = deltamu
-    polylog = np.frompyfunc(mp.polylog, 2, 1)
-    if muR != 0:
-        print("Only for muR = 0 for now :(")
-        return -1
-    def GL(E):
-        return kb*TL/h * np.log(1+np.exp(-(E-muL)/(kb*TL)))
-    def GR(E):
-        return kb*TR/h * np.log(1+np.exp(-(E)/(kb*TR)))
-    def FL(E):
-        t_one = E*GL(E)
-        t_two = - (kb*TL)**2/h * polylog(2, -np.exp(-(E-muL)/(kb*TL)))
-        t_three = muL*(E - kb*TL*np.log(np.exp(E/(kb*TL)) + np.exp(muL/(kb*TL))))
-        return t_one + t_two + t_three
-    def FR(E):
-        t_one = (E-muL)*GR(E)
-        t_two = - (kb*TR)**2/h * polylog(2, -np.exp(-(E)/(kb*TR)))
-        return t_one + t_two
-    
-    def GL_prim(E):
-        return 1/h * np.exp((-E+muL)/(kb*TL))/(1+np.exp((-E+muL)/(kb*TL)))
-    def FL_prim(E):
-        t_one = E*GL_prim(E)
-        t_two = kb*TL/h * np.log(1+np.exp((-E+muL)/(kb*TL)))
-        t_three = - kb*TL *np.log(np.exp(E/(kb*TL)) + np.exp(muL/(kb*TL)))
-        t_four = E - muL*np.exp(muL/(kb*TL))/(np.exp(E/(kb*TL))+np.exp(muL/(kb*TL)))
-        return t_one + t_two + t_three + t_four
-    def FR_prim(E):
-        return - GR(E)
-    GL_0 = GL(E0)
-    GL_prim_0 = GL_prim(E0)
-    GR_0 = GR(E0)
-    FL_prim_0 = FL_prim(E0)
-    Jprim = FL_prim_0 - FL_prim(E1) - FR_prim(E0) + FR_prim(E1)
-    Pprim = -(GL_0-GR_0-GL(E1)+GR(E1) + muL*(GL_prim_0-GL_prim(E1)))
-
-    JL = FL(E0) - FL(E1) - FR(E0) + FR(E1)
-    P = muL*(-GL(E0) + GL(E1) + GR(E0) - GR(E1))
-
-    return (float(Jprim), float(Pprim), float(JL), float(P)) 
 
 def entropy_coeff(E, occupf_L):
     coeff = -kb*np.log(occupf_L(E)/(1-occupf_L(E)))
@@ -205,22 +223,24 @@ def pertub_dist(E, dist, pertub):
             dist = 1
     return dist
 
-def transmission_avg_avg(C, E, occupf_L, occupf_R, coeff_in, coeff_out):
+def transmission_avg(C, E, occupf_L, occupf_R, coeff_in, coeff_out):
     in_integrands = coeff_in(E)*(occupf_L(E)- occupf_R(E))
     out_integrands = coeff_out(E)*(occupf_L(E)- occupf_R(E))
-    transf = np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands, 0)*np.heaviside(in_integrands, 0)
+    transf = np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands*in_integrands, 0)+np.heaviside(-coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands*in_integrands, 0)
     return transf
 
-def transmission_avg_noise(C, E, occupf_L, occupf_R, coeff):
+def transmission_noise(C, E, occupf_L, occupf_R, coeff):
     integrands = coeff(E)*(occupf_L(E)- occupf_R(E))
-    transf = np.heaviside((occupf_L(E) - occupf_R(E))/(coeff(E)*(occupf_L(E) *(1-occupf_L(E)) + occupf_R(E)*(1-occupf_R(E)))) - C, 0)*np.heaviside(integrands, 0)
+    comp = (occupf_L(E) - occupf_R(E))/(coeff(E)*(occupf_L(E) *(1-occupf_L(E)) + occupf_R(E)*(1-occupf_R(E))))
+    transf = np.heaviside(comp - C, 0)*np.heaviside(integrands, 0) \
+            #+np.heaviside(- (comp - C), 0)*np.heaviside(-integrands, 0)
     return transf
 
-def general_opt_avg_avg(C_init,target,E_low, E_high,occupf_L, occupf_R, coeff_in, coeff_out, fixed = "out"):
+def general_opt_avg(C_init,target,E_low, E_high,occupf_L, occupf_R, coeff_in, coeff_out, fixed = "out"):
     '''
     Make sure coeffs are defined such that positive contributions to currents are desirable and negative suppressed
     '''
-    transf = lambda C,E: transmission_avg_avg(C, E, occupf_L, occupf_R, coeff_in, coeff_out)
+    transf = lambda C,E: transmission_avg(C, E, occupf_L, occupf_R, coeff_in, coeff_out)
     if fixed == "out":
         coeff = coeff_out
     else:
@@ -232,8 +252,8 @@ def general_opt_avg_avg(C_init,target,E_low, E_high,occupf_L, occupf_R, coeff_in
 
     return res[0]
 
-def general_opt_avg_noise(C_init, target,E_low, E_high,occupf_L, occupf_R, coeff):
-    transf = lambda C,E: transmission_avg_noise(C, E, occupf_L, occupf_R, coeff)
+def general_opt_noise(C_init, target,E_low, E_high,occupf_L, occupf_R, coeff):
+    transf = lambda C,E: transmission_noise(C, E, occupf_L, occupf_R, coeff)
     fixed_current_eq = lambda C: current_integral(E_low, E_high,occupf_L, occupf_R,coeff,lambda E:transf(C,E)) - target
     res = fsolve(fixed_current_eq,C_init)
     return res[0]
