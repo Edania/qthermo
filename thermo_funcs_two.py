@@ -13,7 +13,8 @@ N = 1
 
 
 class two_terminals:
-    def __init__(self, E_low, E_high, transf = None, occupf_L = None, occupf_R = None,  muL = 0, TL = 1, muR = 0, TR = 1):
+    def __init__(self, E_low, E_high, transf = None, occupf_L = None, occupf_R = None,  muL = 0, TL = 1, muR = 0, TR = 1,
+                 coeff_avg = None, coeff_noise = None, coeff_con = None):
         '''
         occupf_L, occupf_R and transf must be functions of E, energy
         '''
@@ -46,8 +47,30 @@ class two_terminals:
     def set_fermi_dist_right(self):
         self.occupf_R = lambda E: fermi_dist(E, self.muR, self.TR)
 
-    def _current_integral(self, coeff):
-        integrand = lambda E: 1/h*coeff(E)*self.transf(E)*(self.occupf_L(E)- self.occupf_R(E))
+    def set_transmission_noise_opt(self, C, coeff):
+        self.transf = self._transmission_noise(C, coeff)
+
+    def set_transmission_avg_opt(self, C, coeff_in, coeff_out):
+        self.transf = self._transmission_avg(C, coeff_in, coeff_out)
+
+    def calc_left_particle_current(self):
+        return self._current_integral(lambda E: 1)
+
+    def calc_right_particle_current(self):
+        return self._current_integral(lambda E: -1)
+
+    def calc_left_energy_current(self):
+        return self._current_integral(lambda E: E)
+    
+    def calc_left_energy_current(self):
+        return self._current_integral(lambda E: E)
+    
+    def _current_integral(self, coeff, transf_in = None):
+        if transf_in == None:
+            transf = self.transf
+        else:
+            transf = transf_in 
+        integrand = lambda E: 1/h*coeff(E)*transf(E)*(self.occupf_L(E)- self.occupf_R(E))
         current, err = integrate.quad(integrand, self.E_low, self.E_high, args=())
         return current
 
@@ -72,7 +95,7 @@ class two_terminals:
                 #+np.heaviside(- (comp - C), 0)*np.heaviside(-integrands, 0)
         return transf
 
-    def general_opt_avg(self, C_init,target,E_low, E_high,occupf_L, occupf_R, coeff_in, coeff_out, fixed = "out"):
+    def general_opt_avg(self, C_init,target, coeff_in, coeff_out, fixed = "out"):
         '''
         Make sure coeffs are defined such that positive contributions to currents are desirable and negative suppressed
         '''
@@ -82,15 +105,15 @@ class two_terminals:
         else:
             coeff = coeff_in
 
-        fixed_current_eq = lambda C: current_integral(E_low, E_high,occupf_L, occupf_R,coeff_out,transf(C)) - target
+        fixed_current_eq = lambda C: self._current_integral(coeff_out,transf(C)) - target
 
         res = fsolve(fixed_current_eq,C_init, factor = 0.1)
 
         return res[0]
 
-    def general_opt_noise(C_init, target,E_low, E_high,occupf_L, occupf_R, coeff):
-        transf = lambda C,E: transmission_noise(C, E, occupf_L, occupf_R, coeff)
-        fixed_current_eq = lambda C: current_integral(E_low, E_high,occupf_L, occupf_R,coeff,lambda E:transf(C,E)) - target
+    def general_opt_noise(self,C_init, target, coeff):
+        transf = lambda C: self._transmission_noise(C, coeff)
+        fixed_current_eq = lambda C: self._current_integral(coeff, transf(C)) - target
         res = fsolve(fixed_current_eq,C_init)
         return res[0]
 
