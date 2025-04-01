@@ -52,6 +52,10 @@ class two_terminals:
 
     def set_transmission_avg_opt(self, C, coeff_in, coeff_out):
         self.transf = self._transmission_avg(C, coeff_in, coeff_out)
+    
+    def entropy_coeff(E, occupf):
+        coeff = -kb*np.log(occupf(E)/(1-occupf(E)))
+        return coeff
 
     def calc_left_particle_current(self):
         return self._current_integral(lambda E: 1)
@@ -62,8 +66,20 @@ class two_terminals:
     def calc_left_energy_current(self):
         return self._current_integral(lambda E: E)
     
-    def calc_left_energy_current(self):
+    def calc_right_energy_current(self):
         return self._current_integral(lambda E: E)
+    
+    def calc_left_heat_current(self):
+        return self._current_integral(lambda E: E-self.muL)
+    
+    def calc_right_heat_current(self):
+        return self._current_integral(lambda E: -E+self.muR)
+    
+    def calc_left_entropy_current(self):
+        return self._current_integral(lambda E: entropy_coeff(E, self.occupf_L))
+    
+    def calc_right_entropy_current(self):
+        return self._current_integral(lambda E: entropy_coeff(E, self.occupf_R))
     
     def _current_integral(self, coeff, transf_in = None):
         if transf_in == None:
@@ -170,6 +186,12 @@ def pmax(TL, TR):
     p = A * np.pi**2/h * N * kb**2 *(TL-TR)**2
     return p
 
+def jRmax(occupf_L, occupf_R, muR):
+    coeff = lambda E:-E+muR
+    transf = lambda E: np.heaviside(coeff(E)*(occupf_L(E) - occupf_R(E)),0)
+    current = current_integral(-np.inf, np.inf, occupf_L, occupf_R, coeff, transf)
+    return current
+
 def E_max(muL, TL, muR, TR):
     if TL-TR == 0:
         return 0
@@ -249,7 +271,7 @@ def pertub_dist(E, dist, pertub):
 def transmission_avg(C, E, occupf_L, occupf_R, coeff_in, coeff_out):
     in_integrands = coeff_in(E)*(occupf_L(E)- occupf_R(E))
     out_integrands = coeff_out(E)*(occupf_L(E)- occupf_R(E))
-    transf = np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands*in_integrands, 0)+np.heaviside(-coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands*in_integrands, 0)
+    transf = np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands, 0)*np.heaviside(in_integrands, 0)#+np.heaviside(-coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands*in_integrands, 0)
     return transf
 
 def transmission_noise(C, E, occupf_L, occupf_R, coeff):
