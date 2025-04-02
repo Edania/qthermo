@@ -15,7 +15,7 @@ N = 1
 
 class two_terminals:
     def __init__(self, E_low, E_high, transf = lambda E: 1, occupf_L = None, occupf_R = None,  muL = 0, TL = 1, muR = 0, TR = 1,
-                 coeff_avg = None, coeff_noise = None, coeff_con = None, N = 1):
+                 coeff_avg = None, coeff_noise = None, coeff_con = None, N = 1, subdivide = False):
         '''
         occupf_L, occupf_R, transf, coeff_avg, coeff_noise, and coeff_con must be functions of E, energy
         '''
@@ -28,7 +28,7 @@ class two_terminals:
         self.TR = TR
         self.transf = transf
         self.N = N
-
+        self.subdivide = subdivide
         # Standard case is two thermal functions
         if occupf_L == None:
             self.set_fermi_dist_left()
@@ -149,7 +149,7 @@ class two_terminals:
         return self._current_integral(self.left_noneq_free_coeff)
     
 
-    def _current_integral(self, coeff, transf_in = None, subdivide = True):
+    def _current_integral(self, coeff, transf_in = None):
         if transf_in == None:
             #print("In wrong place")
             transf = self.transf
@@ -157,14 +157,25 @@ class two_terminals:
             transf = transf_in     
         integrand = lambda E: self.N*1/h*coeff(E)*transf(E)*(self.occupf_L(E)- self.occupf_R(E))
         
-        if subdivide:
-            rough_Es = np.linspace(self.E_low, self.E_high,100)
-            rough_E_lows = rough_Es[np.where(transf(rough_Es[1:])- transf(rough_Es[:-1]) == 1)]
-            #print(rough_E_lows)
-            rough_E_highs = rough_Es[np.where(transf(rough_Es[1:])- transf(rough_Es[:-1]) == -1)]
-            #print(rough_E_highs)
-            E_lows = [fsolve(lambda E: transf(E) -0.5, rough_E_low) for rough_E_low in rough_E_lows]
-            E_highs = [fsolve(lambda E: transf(E) -0.5, rough_E_high) for rough_E_high in rough_E_highs]
+        if self.subdivide:
+            coarse_Es = np.linspace(self.E_low, self.E_high,10000)
+            coarse_E_lows = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == 1)]
+            #print(coarse_E_lows)
+            coarse_E_highs = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == -1)]
+            
+        # if len(coarse_E_highs) == 0 and len(coarse_E_lows) == 0:
+        #     coarse_Es = np.linspace(np.sign(self.E_low)*1.5*self.E_low, 0.2*self.E_high,10000)
+        #     coarse_E_lows = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == 1)]
+        #     #print(coarse_E_lows)
+        #     coarse_E_highs = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == -1)]
+                
+            #print(len(coarse_E_highs))
+            #print(coarse_E_highs)
+            #g = 0.01
+            E_lows = 0.8*coarse_E_lows
+            E_highs = 1.2*coarse_E_highs
+            #E_lows = [fsolve(lambda E: transf(E-g) + transf(E+g) - 1 , 0.9*coarse_E_low, factor=1) for coarse_E_low in coarse_E_lows]
+            #E_highs = [fsolve(lambda E: transf(E-g) + transf(E+g) + 1, 0.9*coarse_E_high,factor=1) for coarse_E_high in coarse_E_highs]
             #print(E_lows)
             #print(E_highs)
             current = 0
@@ -194,7 +205,7 @@ class two_terminals:
     def _transmission_noise(self, C, coeff):
         integrands = lambda E: coeff(E)*(self.occupf_L(E)- self.occupf_R(E))
         comp = lambda E: (self.occupf_L(E) - self.occupf_R(E))/(coeff(E)*(self.occupf_L(E) *(1-self.occupf_L(E)) + self.occupf_R(E)*(1-self.occupf_R(E))))
-        transf = lambda E: np.heaviside(comp(E) - C, 0)*np.heaviside(integrands, 0) \
+        transf = lambda E: np.heaviside(comp(E) - C, 0.5)*np.heaviside(integrands(E), 0.5) \
                 #+np.heaviside(- (comp - C), 0)*np.heaviside(-integrands, 0)
         return transf
 
@@ -215,7 +226,7 @@ class two_terminals:
         transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
         fixed_current_eq = lambda C: self._current_integral(self.coeff_con,transf(C)) - target
 
-        res = fsolve(fixed_current_eq,C_init, factor = 0.1)
+        res = fsolve(fixed_current_eq,C_init, factor = 1)
         self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
         return res[0]
 
