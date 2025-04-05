@@ -15,7 +15,7 @@ N = 1
 
 class two_terminals:
     def __init__(self, E_low, E_high, transf = lambda E: 1, occupf_L = None, occupf_R = None,  muL = 0, TL = 1, muR = 0, TR = 1,
-                 coeff_avg = None, coeff_noise = None, coeff_con = None, N = 1, subdivide = False):
+                 coeff_avg = None, coeff_noise = None, coeff_con = None, N = 1, subdivide = False, debug = False):
         '''
         occupf_L, occupf_R, transf, coeff_avg, coeff_noise, and coeff_con must be functions of E, energy
         '''
@@ -29,6 +29,7 @@ class two_terminals:
         self.transf = transf
         self.N = N
         self.subdivide = subdivide
+        self.debug = debug
         # Standard case is two thermal functions
         if occupf_L == None:
             self.set_fermi_dist_left()
@@ -49,11 +50,11 @@ class two_terminals:
         else:
             self.coeff_con = coeff_con
         if coeff_noise == None:
-            self.coeff_noise = lambda E: -self.power_coeff(E)
+            self.coeff_noise = self.right_heat_coeff
         else:
             self.coeff_noise = coeff_noise
 
-        print("Have you defined the coefficients to be positive?")
+        #print("Have you defined the coefficients to be positive?")
     
     
 
@@ -186,9 +187,11 @@ class two_terminals:
             current, err = integrate.quad(integrand, self.E_low, self.E_high, args=())
         return current
 
-    def noise_cont(self, coeff):
-        thermal = lambda E: self.N*coeff(E)**2*self.transf(E)*(self.occupf_L(E)*(1-self.occupf_L(E))+ self.occupf_R(E)*(1-self.occupf_R(E)))
-        shot = lambda E: coeff(E)**2 * self.N**2*self.transf(E)*(1-self.transf(E))*(self.occupf_L(E)+self.occupf_R(E))**2
+    def noise_cont(self, coeff, transf = None):
+        if transf == None:
+            transf = self.transf
+        thermal = lambda E: self.N*coeff(E)**2*transf(E)*(self.occupf_L(E)*(1-self.occupf_L(E))+ self.occupf_R(E)*(1-self.occupf_R(E)))
+        shot = lambda E: coeff(E)**2 * self.N**2*transf(E)*(1-transf(E))*(self.occupf_L(E)+self.occupf_R(E))**2
         integrand = lambda E: thermal(E) + shot(E)
         current, err = integrate.quad(integrand, self.E_low, self.E_high, args=())
         return current
@@ -198,23 +201,29 @@ class two_terminals:
         y_integrands = lambda E: coeff_y(E)*(self.occupf_L(E)- self.occupf_R(E))
         #transf = lambda E: np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E)*in_integrands(E), 0)+np.heaviside(-coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E)*in_integrands(E), 0)
         transf = lambda E: np.heaviside(coeff_x(E)/coeff_y(E) - C, 0.5)*np.heaviside(y_integrands(E),0.5)* np.heaviside(x_integrands(E), 0.5)
-        #print("C",C)
-        #print("Con current", self._current_integral(coeff_x,transf))
+        if self.debug:
+            print("C",C)
+            print("Con current", self._current_integral(coeff_x,transf))
         return transf
 
-    def _transmission_noise(self, C, coeff):
-        integrands = lambda E: coeff(E)*(self.occupf_L(E)- self.occupf_R(E))
-        comp = lambda E: (self.occupf_L(E) - self.occupf_R(E))/(coeff(E)*(self.occupf_L(E) *(1-self.occupf_L(E)) + self.occupf_R(E)*(1-self.occupf_R(E))))
-        transf = lambda E: np.heaviside(comp(E) - C, 0.5)*np.heaviside(integrands(E), 0.5) \
+    def _noise_condition(self):
+        return lambda E: self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E))/(self.coeff_noise(E)**2*(self.occupf_L(E) *(1-self.occupf_L(E)) + self.occupf_R(E)*(1-self.occupf_R(E))))
+
+    def _transmission_noise(self, C):
+        integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+        comp = self._noise_condition(self.coeff_noise, self.coeff_con)
+        transf = lambda E: np.heaviside(comp(E) - C, 0)*np.heaviside(integrands(E), 0) \
                 #+np.heaviside(- (comp - C), 0)*np.heaviside(-integrands, 0)
+        if self.debug:
+            print("C",C)       
+            print("Con current", self._current_integral(self.coeff_con,transf))
+        
         return transf
-
-    def optimize_for_avg(self, C_init,target, fixed = "nominator"):
+ 
+    def optimize_for_avg(self,target, C_init = None, fixed = "nominator"):
         '''
         Make sure coeffs are defined such that positive contributions to currents are desirable and negative suppressed
         '''
-
-
         if fixed == "nominator":
             coeff_nom = self.coeff_con
             coeff_denom = self.coeff_avg
@@ -222,20 +231,88 @@ class two_terminals:
         else:
             coeff_denom = self.coeff_con
             coeff_nom = self.coeff_avg
-            
+
+        if C_init == None:
+            temp_Es = np.linspace(self.E_low, self.E_high, 100)
+            x_integrands = lambda E: coeff_nom(E)*(self.occupf_L(E)- self.occupf_R(E))
+            y_integrands = lambda E: coeff_denom(E)*(self.occupf_L(E)- self.occupf_R(E))
+            func_C = coeff_nom(temp_Es)/coeff_denom(temp_Es)*np.heaviside(y_integrands(temp_Es),0.5)* np.heaviside(x_integrands(temp_Es), 0.5)
+            C_max = np.max(func_C)
+            C_init = 0.5*C_max
+            if self.debug:
+                print("C_init: ", C_init)
+
         transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
         fixed_current_eq = lambda C: self._current_integral(self.coeff_con,transf(C)) - target
 
-        res = fsolve(fixed_current_eq,C_init, factor = 1)
+        res = fsolve(fixed_current_eq,C_init, factor = 0.1)
         self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
         return res[0]
 
-    def optimize_for_noise(self,C_init, target):
-        transf = lambda C: self._transmission_noise(C, self.coeff_noise)
+    def optimize_for_noise(self, target, C_init = None):
+        if C_init == None:
+            temp_Es = np.linspace(self.E_low, self.E_high, 100)
+            con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+            func_C = self._noise_condition()(temp_Es)*np.heaviside(con_integrands(temp_Es),0)
+            func_C = func_C[~np.isnan(func_C)]
+            C_max = np.max(func_C)
+            C_init = 0.5*C_max
+            if self.debug:
+                print("C_init: ", C_init)
+        transf = lambda C: self._transmission_noise(C)
         fixed_current_eq = lambda C: self._current_integral(self.coeff_noise, transf(C)) - target
-        res = fsolve(fixed_current_eq,C_init)
-        self.transf = self._transmission_noise(res[0],self.coeff_noise)
+        res = fsolve(fixed_current_eq,C_init, factor = 0.1, xtol=1e-6)
+        self.transf = self._transmission_noise(res[0])
         return res[0]
+
+
+    def _product_condition(self,thetas):
+        div = lambda E: self.coeff_con(E)*(self.occupf_L(E)-self.occupf_R(E))
+        term_one = lambda E: -thetas[0]*self.coeff_noise(E)**2*(self.occupf_L(E)*(1-self.occupf_L(E))+self.occupf_R(E)*(1-self.occupf_R(E)))#/div(E)
+        term_two = lambda E: -thetas[1]*self.coeff_avg(E)*(self.occupf_L(E)-self.occupf_R(E))#/div(E)
+        term_three = lambda E: thetas[2]*div(E)
+        opt_func = lambda E: term_one(E)+term_two(E)+term_three(E)
+        return opt_func
+
+    def _transmission_product(self,thetas):
+        con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+        avg_integrands = lambda E: self.coeff_avg(E)*(self.occupf_L(E)- self.occupf_R(E))
+            
+        #print(-thetas[0]*thetas[1] + max_prod)
+        transf = lambda E: np.heaviside(self._product_condition(thetas)(E), 0)*np.heaviside(avg_integrands(E),0)*np.heaviside(con_integrands(E),0)
+        return transf
+        
+    def optimize_for_product(self, target, thetas_init = None, alpha = 0.5):
+        if thetas_init == None:
+            max_transf = lambda E: np.heaviside(self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
+            self.transf = max_transf
+            max_noise = self.noise_cont(self.coeff_noise)
+            max_avg = self._current_integral(self.coeff_avg)
+            temp_Es = np.linspace(self.E_low, self.E_high, 100)
+            con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+            avg_integrands = lambda E: self.coeff_avg(E)*(self.occupf_L(E)- self.occupf_R(E))
+            
+            func_C = self._product_condition([max_avg/2, max_noise/2, 0])(temp_Es)*np.heaviside(con_integrands(temp_Es),0)*np.heaviside(avg_integrands(temp_Es),0)
+            func_C = func_C[~np.isnan(func_C)]
+            C_max = -np.min(func_C)
+            thetas_init = [max_avg/2, max_noise/2, C_max]
+            #thetas_init = [max_avg/2, max_noise/2, 0.1]
+
+            if self.debug:
+                print("Thetas init: ", thetas_init)
+
+        def opt_func(thetas):
+            transf = self._transmission_product(thetas)
+            nois = self.noise_cont(self.coeff_noise, transf)
+            avg = self._current_integral(self.coeff_avg, transf)
+            con = self._current_integral(self.coeff_con, transf)
+            print("Thetas: ", thetas)
+            print("opt func: ", avg - thetas[0], nois - thetas[1], con-target)
+            return avg - thetas[0], nois - thetas[1], con-target
+        
+        res = fsolve(opt_func, thetas_init, factor=0.1, xtol=1e-6)
+        self.transf = self._transmission_product(res)
+        return res
 
     def carnot(self):
         return (1-self.TR/self.TL)

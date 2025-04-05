@@ -21,6 +21,8 @@ def buttiker_probe(system:two_terminals):
         T = params[1]
         sys_copy.muR = mu
         sys_copy.TR = T
+        
+        # Make sure to update the fermi distribution in the system
         sys_copy.set_fermi_dist_right()
         I_E = sys_copy.calc_left_energy_current()
         I_N = sys_copy.calc_left_particle_current()
@@ -50,7 +52,7 @@ def check_avg_optimization(system:two_terminals):
     max_cool, mc_transf = sys_copy.jRmax()
     target = 0.5*max_cool
     
-    C = sys_copy.optimize_for_avg(0.1,target)
+    C = sys_copy.optimize_for_avg(target)
     transf_avg = sys_copy.transf #thermal_left._transmission_avg(0.1,thermal_left.coeff_con, thermal_left.coeff_avg)#
     #thermal_left.transf = mc_transf
 
@@ -74,10 +76,10 @@ def check_noise_optimization(system:two_terminals):
     max_cool, mc_transf = sys_copy.jRmax()
     target = 0.5*max_cool
     
-    C = sys_copy.optimize_for_noise(0.3, target)
-    transf_avg = sys_copy.transf #thermal_left._transmission_avg(0.1,thermal_left.coeff_con, thermal_left.coeff_avg)#
+    C = sys_copy.optimize_for_noise(target)
+    transf_noise = sys_copy.transf
     #thermal_left.transf = mc_transf
-
+    #transf_noise = sys_copy._transmission_noise(0.1, sys_copy.coeff_noise, sys_copy.coeff_con)
     #plt.plot(Es, *)
     #plt.plot(Es,thermal_left.coeff_con(Es)*(thermal_left.occupf_L(Es) - thermal_left.occupf_R(Es)))
     #plt.hlines(0, E_low, E_high)
@@ -88,8 +90,8 @@ def check_noise_optimization(system:two_terminals):
     print("Difference from target: ", sys_copy.calc_right_heat_current()- target)
     plt.plot(Es, sys_copy.occupf_L(Es), label = "fL")
     plt.plot(Es, sys_copy.occupf_R(Es), label = "fR")
-    plt.plot(Es, transf_avg(Es), label = "transf avg")
-    plt.plot(Es, mc_transf(Es), label = "mc transf")
+    plt.plot(Es, transf_noise(Es), label = "transf noise", zorder = 2)
+    plt.plot(Es, mc_transf(Es), label = "mc transf", zorder = 1)
     #plt.plot(Es, np.heaviside(thermal_left.coeff_con(Es)/thermal_left.coeff_avg(Es)-0.3,0))
     plt.legend()
     plt.show()
@@ -98,8 +100,11 @@ def check_product_optimization(system:two_terminals):
     max_cool, mc_transf = sys_copy.jRmax()
     target = 0.5*max_cool
     
-    C = sys_copy.optimize_for_avg(0.1,target)
-    transf_avg = sys_copy.transf #thermal_left._transmission_avg(0.1,thermal_left.coeff_con, thermal_left.coeff_avg)#
+    C = sys_copy.optimize_for_product(target)
+    print("Thetas: ", C)
+    transf_prod = sys_copy.transf #thermal_left._transmission_avg(0.1,thermal_left.coeff_con, thermal_left.coeff_avg)#
+    #transf_prod = sys_copy._transmission_product([0.01978747, 0.00269362, 0.04305463])
+    #print(sys_copy.optimize_for_product.opt_func([0.01978747, 0.00269362, 0.04305463]))
     #thermal_left.transf = mc_transf
 
     #plt.plot(Es, *)
@@ -112,16 +117,16 @@ def check_product_optimization(system:two_terminals):
     print("Difference from target: ", sys_copy.calc_right_heat_current()- target)
     plt.plot(Es, sys_copy.occupf_L(Es), label = "fL")
     plt.plot(Es, sys_copy.occupf_R(Es), label = "fR")
-    plt.plot(Es, transf_avg(Es), label = "transf avg")
+    plt.plot(Es, transf_prod(Es), label = "transf prod")
     plt.plot(Es, mc_transf(Es), label = "mc transf")
     #plt.plot(Es, np.heaviside(thermal_left.coeff_con(Es)/thermal_left.coeff_avg(Es)-0.3,0))
     plt.legend()
     plt.show()
 
 if __name__ == "__main__":
-    check_probe = False
-    check_avg = True
-    check_noise = True
+    check_probe= False
+    check_avg = False
+    check_noise = False
     check_product = True
     midT = 1
     deltaT = 0.5
@@ -131,8 +136,8 @@ if __name__ == "__main__":
     muL = muR + deltamu
     TL = midT + deltaT
 
-    E_low = -0.1
-    E_high = 1
+    E_low = 0
+    E_high = 0.5
     Es = np.linspace(E_low, E_high,1000)
 
     occupf_L_nth = thermal_with_lorentz(muL, TL, 0.2 ,0.05, 1)
@@ -145,15 +150,21 @@ if __name__ == "__main__":
 
     buttiker_probe(left_virtual)
 
-    thermal_left = two_terminals(E_low, E_high, muL=left_virtual.muR, TL = left_virtual.TR, muR = muR, TR = TR, N = 1, subdivide=False)
+    #thermal_left = two_terminals(E_low, E_high, muL=left_virtual.muR, TL = left_virtual.TR, muR = muR, TR = TR, N = 1, subdivide=False, debug=True)
+    thermal_left = two_terminals(E_low, E_high, muL=muL, TL = TL, muR = muR, TR = TR, N = 1, subdivide=False)
     if check_avg:
         check_avg_optimization(thermal_left)
 
     if check_noise:
         check_noise_optimization(thermal_left)
 
+    if check_product:
+        check_product_optimization(thermal_left)
+    
     #thermal_left = two_terminals(E_low, E_high, muL=muL, TL =TL, muR = muR, TR = TR, N = 1)
-    nonthermal_left = two_terminals(E_low, E_high, occupf_L= occupf_L_nth, muL=muL, TL = TL, muR = muR, TR = TR, N = 1)
+    nonthermal_left = two_terminals(E_low, E_high, occupf_L= occupf_L_nth, muL=muL, TL = TL, muR = muR, TR = TR, N = 1, subdivide=False)
 
     if check_avg:
         check_avg_optimization(nonthermal_left)
+
+    
