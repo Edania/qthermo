@@ -1,244 +1,546 @@
 #Define functions
 import numpy as np
-import mpmath as mp
+import copy
+import utilities as ut
+ 
 from scipy import integrate
 from scipy.optimize import minimize, fsolve
+from inspect import signature
 
 ## GLOBAL CONSTANTS ##
 h = 1
 kb = 1
 e = 1
-N = 1
+# N = 1
 ## FUNCTION DEFINITIONS ##
-def fermi_dist(E, mu, T):
-    f_dist = 1/(1+np.exp((E-mu)/(T*kb)))
-    return f_dist
 
-def current_integral(E_low, E_high, muL, TL, muR, TR, transf, occupf_L = fermi_dist, occupf_R = fermi_dist, type = "electric"):
-    if type == "electric":
-        coeff = lambda E: e
-    elif type == "heat":
-        if occupf_L != fermi_dist:
-            coeff = lambda E: entropy_coeff(E,muL,TL,occupf_L)
+#TODO: implement secondary variable optimization 
+
+class two_terminals:
+
+    def __init__(self, E_low, E_high, transf = lambda E: 1, occupf_L = None, diff_occupf_L = None,occupf_R = None,  muL = 0, TL = 1, muR = 0, TR = 1,
+                 coeff_avg = None, coeff_noise = None, coeff_con = None, N = 1, subdivide = False, debug = False):
+        '''
+        occupf_L, occupf_R, transf, coeff_avg, coeff_noise, and coeff_con must be functions of E, energy
+        '''
+
+        self.E_low = E_low
+        self.E_high = E_high
+        self.muL = muL
+        self.muR = muR
+        self.TL = TL
+        self.TR = TR
+        self.transf = transf
+        self.N = N
+        self.subdivide = subdivide
+        self.debug = debug
+        # Standard case is two thermal functions
+        if occupf_L == None:
+            self.set_fermi_dist_left()
         else:
-            coeff = lambda E: (E-muL)
-    elif type == "heatR":
-        coeff = lambda E: -(E-muR)
-    elif type == "energy":
-        coeff = lambda E: E
-    else:
-        print("Invalid current type")
-        return -1
-    occupdiff = lambda E: occupf_L(E, muL, TL) - occupf_R(E, muR, TR)
-    
-    integrand = lambda E: 1/h*coeff(E)*transf(E)*(occupdiff(E))
-    current, err = integrate.quad(integrand, E_low, E_high, args=())
-    return current
-
-# To make sure that we are in the heat engine regime (optimizing gets weird otherwise.)
-# However this constraint seems to lead to a badly behaved problem. It could be better/easier to filter the output data afterwards to remove the results where power < 0
-def carnot(TL,TR):
-    return (1-TR/TL)
-
-def cop(TL, TR):
-    return TR/(TL-TR)
-
-def pmax(TL, TR):
-    A = 0.0321
-    p = A * np.pi**2/h * N * kb**2 *(TL-TR)**2
-    return p
-
-def E_max(muL, TL, muR, TR):
-    if TL-TR == 0:
-        return 0
-    #print(((deltaT+T)*mu - T*(deltamu+mu))/deltaT)
-    return (TL*muR - TR*muL)/(TL-TR)
-
-def opt_for_eff(theta, TL, muR, TR, occupf_L):
-    muL = theta[0]
-    E1 = theta[1]
-    E0 = E_max(muL,TL,muR,TR)
-    heatL = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heat")
-    return heatL
-    #heatR = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heatR")
-    #pgen = heatL + heatR
-
-def constrain_pgen(theta, TL, muR, TR, occupf_L, target_p):
-    muL = theta[0]
-    E1 = theta[1]
-    E0 = E_max(muL,TL,muR,TR)
-    heatL = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heat")
-    heatR = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heatR")
-    pgen = heatL + heatR
-    return pgen - target_p
-
-
-def correct_E1(E_range, muL, TL, muR, TR, occupf_L, target_p):
-    def GL(E):
-        return kb*TL/h * np.log(1+np.exp(-(E-muL)/(kb*TL)))
-    def GR(E):
-        return kb*TR/h * np.log(1+np.exp(-(E-muR)/(kb*TR)))
-    E0 = E_max(muL, TL, muR, TR)
-    GL_0 = GL(E0)
-    GR_0 = GR(E0)
-    #print(FL_prim_0)
-    def e_solver(E1):
-        #transf = np.zeros_like(E_range)
-        #transf[E_range > E0] = 1
-        #transf[E_range > E1] = 0
-        #heatL = slice_current_integral(transf, E_range, muL, TL ,muR, TR, E_range[1]-E_range[0], occupf_L, type = "heat")
-        #heatR = slice_current_integral(transf, E_range, muL, TL ,muR, TR, E_range[1]-E_range[0], occupf_L, type = "heatR")
-        heatL = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heat")
-        heatR = current_integral(E0, E1,muL,TL,muR,TR, lambda E: N, occupf_L, type = "heatR")
-        pgen = heatL + heatR
-        #pgen = muL*(-GL_0+GR_0+GL(E1)-GR(E1))
-        #print(pgen)
-        return pgen - target_p
-        #J_prim = FL_prim_0 - FL_prim(E1)
-        #P_prim = e*(GL_0+GR_0-GL(E1)-GR(E1)) + muL*(GL_prim_0-GL_prim(E1))
-        #if P_prim == 0:
-        #    return E0
-        #print(GL_0+GR_0-GL(E1)-GR(E1))
-        #print((J_prim/P_prim))
-        #return float((-(1-J_prim/P_prim)*muL - E1)[0])
-
-    res = fsolve(e_solver, E0*5)
-    return res[0] 
-
-def correct_Jprim_Pprim(E0,E1,muL_real, TL, muR_real, TR):
-    deltamu = muL_real - muR_real
-    muR = 0
-    muL = deltamu
-    polylog = np.frompyfunc(mp.polylog, 2, 1)
-    if muR != 0:
-        print("Only for muR = 0 for now :(")
-        return -1
-    def GL(E):
-        return kb*TL/h * np.log(1+np.exp(-(E-muL)/(kb*TL)))
-    def GR(E):
-        return kb*TR/h * np.log(1+np.exp(-(E)/(kb*TR)))
-    def FL(E):
-        t_one = E*GL(E)
-        t_two = - (kb*TL)**2/h * polylog(2, -np.exp(-(E-muL)/(kb*TL)))
-        t_three = muL*(E - kb*TL*np.log(np.exp(E/(kb*TL)) + np.exp(muL/(kb*TL))))
-        return t_one + t_two + t_three
-    def FR(E):
-        t_one = (E-muL)*GR(E)
-        t_two = - (kb*TR)**2/h * polylog(2, -np.exp(-(E)/(kb*TR)))
-        return t_one + t_two
-    
-    def GL_prim(E):
-        return 1/h * np.exp((-E+muL)/(kb*TL))/(1+np.exp((-E+muL)/(kb*TL)))
-    def FL_prim(E):
-        t_one = E*GL_prim(E)
-        t_two = kb*TL/h * np.log(1+np.exp((-E+muL)/(kb*TL)))
-        t_three = - kb*TL *np.log(np.exp(E/(kb*TL)) + np.exp(muL/(kb*TL)))
-        t_four = E - muL*np.exp(muL/(kb*TL))/(np.exp(E/(kb*TL))+np.exp(muL/(kb*TL)))
-        return t_one + t_two + t_three + t_four
-    def FR_prim(E):
-        return - GR(E)
-    GL_0 = GL(E0)
-    GL_prim_0 = GL_prim(E0)
-    GR_0 = GR(E0)
-    FL_prim_0 = FL_prim(E0)
-    Jprim = FL_prim_0 - FL_prim(E1) - FR_prim(E0) + FR_prim(E1)
-    Pprim = -(GL_0-GR_0-GL(E1)+GR(E1) + muL*(GL_prim_0-GL_prim(E1)))
-
-    JL = FL(E0) - FL(E1) - FR(E0) + FR(E1)
-    P = muL*(-GL(E0) + GL(E1) + GR(E0) - GR(E1))
-
-    return (float(Jprim), float(Pprim), float(JL), float(P)) 
-
-def entropy_coeff(E, muL, TL, occupf_L = fermi_dist):
-    coeff = -kb*TL*np.log(occupf_L(E, muL, TL)/(1-occupf_L(E, muL, TL)))
-    return coeff
-
-def calc_dP_dtau(E, muL, TL, muR, TR, occupf_L = fermi_dist, occupf_R= fermi_dist):
-    coeff = -entropy_coeff(E, muL, TL, occupf_L)
-    dP_dtau = -1/h * (E - muR + coeff) * (occupf_L(E, muL, TL) - occupf_R(E,muR,TR))
-    return dP_dtau
-
-
-def slice_current_integral(transf,E_mids,muL, TL ,muR, TR, occupf_L = fermi_dist, occupf_R=fermi_dist,type = "electric", return_integrands = False):
-    if type == "electric":
-        coeff = lambda E: e
-    elif type == "heat":
-        if occupf_L != fermi_dist:
-            coeff = lambda E: entropy_coeff(E,muL,TL,occupf_L)
+            self.set_occupf_L(occupf_L)
+        self.diff_occupf_L = diff_occupf_L
+        
+        if occupf_R == None:
+            self.set_fermi_dist_right()
         else:
-            coeff = lambda E: (E-muL)
-    elif type == "heatR":
-        coeff = lambda E: -(E-muR)
-    elif type == "energy":
-        coeff = lambda E: E
-    else:
-        print("Invalid current type")
+            self.occupf_R = occupf_R
+
+        # Set standard currents we want to compare. We choose the efficiency -J_R/P with J_R fixed as standard, and the output noise considered
+        if coeff_avg == None:
+            self.coeff_avg = lambda E: -self.power_coeff(E)
+        else:
+            self.coeff_avg = coeff_avg
+        if coeff_con == None:
+            self.coeff_con = self.right_heat_coeff
+        else:
+            self.coeff_con = coeff_con
+        if coeff_noise == None:
+            self.coeff_noise = self.right_heat_coeff
+        else:
+            self.coeff_noise = coeff_noise
+
+
+        self.set_occup_roots()
+        #print("Have you defined the coefficients to be positive?")
+    
+
+    # @property
+    # def muL(self):
+    #     return self._muL
+
+    # @muL.setter
+    # def value(self, mu):
+    #     self._value = mu
+    #     self.set_fermi_dist_left()
+
+    def set_full_transmission(self):
+        self.transf = lambda E: 1
+
+    def set_fermi_dist_left(self):
+        self.occupf_L = lambda E: two_terminals.fermi_dist(E, self.muL, self.TL)
+    
+    def set_fermi_dist_right(self):
+        self.occupf_R = lambda E: two_terminals.fermi_dist(E, self.muR, self.TR)
+
+    def set_transmission_noise_opt(self, C, coeff):
+        self.transf = self._transmission_noise(C, coeff)
+
+    def set_transmission_avg_opt(self, C, coeff_in, coeff_out):
+        self.transf = self._transmission_avg(C, coeff_in, coeff_out)
+
+    def set_occupf_L(self, occupf_L, z = 0):
+        if len(signature(occupf_L).parameters) == 2:
+            self.z = z#signature(occupf_L).parameters['z'].default
+            self.wrapper_occupf_L = lambda E, z: occupf_L(E,z)
+            self.occupf_L = lambda E: occupf_L(E,self.z)
+        else:
+            self.occupf_L = occupf_L
+
+    def update_occupf_L(self):
+        
+        self.occupf_L = lambda E: self.wrapper_occupf_L(E, self.z)
+
+    def entropy_coeff(E, occupf):
+        coeff = kb*np.log(occupf(E)/(1-occupf(E)))
+        return coeff
+
+    def left_entropy_coeff(self,E):
+        return two_terminals.entropy_coeff(E, self.occupf_L)
+
+    def right_entropy_coeff(self,E):
+        return  -two_terminals.entropy_coeff(E, self.occupf_R)
+
+    def left_heat_coeff(self,E):
+        return E-self.muL
+
+    def right_heat_coeff(self,E):
+        return -E+self.muR
+
+    def left_particle_coeff(self,E):
+        return 1
+
+    def right_particle_coeff(self,E):
         return -1
 
-    #if type == "heatR":
-    #    occupdiff = -occupf_L(E_mids,muL,TL)+ occupf_R(E_mids,muR,TR)
-    #else:    
-    occupdiff = occupf_L(E_mids,muL,TL)- occupf_R(E_mids,muR,TR)
-    #print(coeff(E_mids))
-    #print(transf)
-    #print(occupdiff)
-    deltaE = E_mids[1]-E_mids[0]
-    integrands = 1/h*coeff(E_mids)*transf*occupdiff*deltaE
-    #if np.any(integrands < 0):
-    #    current = -100
-    #else:
-    current = np.sum(integrands)   
-    if return_integrands:
-        return current, integrands
-    return current
+    def left_electric_coeff(self,E):
+        return self.muL
+
+    def right_electric_coeff(self,E):
+        return -self.muR
     
-def slice_maximize_eff(transf, E_mids, muL, TL ,muR, TR,occupf_L = fermi_dist, occupf_R=fermi_dist):
-    #electric, integrands = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE, occupf_L, occupf_R,type = "electric", return_integrands=True)
+    def power_coeff(self,E):
+        return (self.muR-self.muL)
 
-    heat = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, occupf_L,occupf_R,type = "heat")
-    heatR = slice_current_integral(transf, E_mids, muL, TL ,muR, TR,occupf_L,occupf_R,type = "heatR")
-    power = heat + heatR#-e*(muL-muR)*electric
-    #if heat == 0:
-    #    return np.inf
-    eff = power/heat
-    #if np.abs(eff) > 1:
-    #    return np.inf
-    return -eff
+    def left_energy_coeff(self,E):
+        return E
+
+    def right_energy_coeff(self, E):
+        return -E
+    
+    def left_noneq_free_coeff(self,E):
+        return E - self.TR*self.left_entropy_coeff(E)
+
+    def calc_left_particle_current(self):
+        return self._current_integral(self.left_particle_coeff)
+
+    def calc_right_particle_current(self):
+        return self._current_integral(self.right_particle_coeff)
+
+    def calc_left_energy_current(self):
+        return self._current_integral(self.left_energy_coeff)
+
+    def calc_right_energy_current(self):
+        return self._current_integral(self.right_energy_coeff)
+    
+    def calc_left_heat_current(self):
+        return self._current_integral(self.left_heat_coeff)
+    
+    def calc_right_heat_current(self):
+        return self._current_integral(self.right_heat_coeff)
+    
+    def calc_left_entropy_current(self):
+        return self._current_integral(self.left_entropy_coeff)
+    
+    def calc_right_entropy_current(self):
+        return self._current_integral(self.right_entropy_coeff)
+    
+    def calc_right_entropy_current(self):
+        return self._current_integral(self.left_noneq_free_coeff)
+    
+    def get_efficiency(self):
+        return self._current_integral(self.coeff_con)/self._current_integral(self.coeff_avg)
 
 
-def slice_maximize_power(transf, E_mids, muL, TL ,muR, TR,occupf_L = fermi_dist):
-    electric = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, occupf_L,type = "electric")
-    power = -e*(muL-muR)*electric
-    #if target_eff > 0:
-    #    heat = w_simple_current(E, deltamu, deltaT, type = "heat")
-    #    eff = power/heat
-    return -power
+    def find_occup_roots(self, step = 0.1, tol = 1e-3):
+        occupdiff = lambda E: self.occupf_L(E) - self.occupf_R(E)
+        roots = ut.root_finder(occupdiff, self.E_low, self.E_high, step, tol)
+        return roots
+    
+    def set_occup_roots(self, step = 0.1, tol = 1e-3):
+        self.occuproots = self.find_occup_roots(step, tol)
 
-def slice_eff_constraint(transf, E_mids, muL, TL ,muR, TR, deltaE, target_eff,occupf_L = fermi_dist):
-#    electric = slice_current_integral(transf,E_mids, muL, TL ,muR, TR, deltaE, type = "electric")
-    heat = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE, occupf_L,type = "heat")
-    heatR = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE,occupf_L,type = "heatR")
-    power = heat + heatR#-e*(muL-muR)*electricpower = -e*(muL-muR)*electric
-    eff = power/heat if heat != 0 else -1
-    return target_eff - eff
+    # def find_constraint_roots(self, step = 0.1, tol = 1e-3):
+        
+        # return roots
+    def constrained_current_max(self, step = 0.1, tol = 1e-3):
+        func = lambda E:self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E))
+        roots = np.array(ut.root_finder(func, self.E_low, self.E_high, step, tol))
+        roots = np.sort(roots)
+        # Assert that we truly only have roots
+        roots[func(roots) < 1e-6]
+        transf = lambda E: np.heaviside(func(E),0)
 
-def slice_pow_constraint(transf, E_mids, muL, TL, muR, TR, target_pow, occupf_L = fermi_dist):
-#    electric = slice_current_integral(transf,E_mids, muL, TL ,muR, TR, deltaE, type = "electric")
-#    power = -e*(muL-muR)*electric
-    heat = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, occupf_L,type = "heat")
-    heatR = slice_current_integral(transf, E_mids, muL, TL ,muR, TR,occupf_L,type = "heatR")
-    power = heat + heatR#-e*(muL-muR)*electricpower = -e*(muL-muR)*electric
-    return target_pow-power
+        # h = 0.001
+        # first = func(roots[0]+ h) - func(roots[0] - h)
+        # if self.debug:
+        #     print("Roots: ", roots)
+        #     print("Changes: ", func(roots+ h) - func(roots - h))
+        # #print(first)
+        # transf_list = []
+        # if first > 0:
+        #     root_end = len(roots) - 1 if len(roots) % 2 == 0 else len(roots) - 2
+            
+        #     for i in range(0,root_end,2):
+        #         print(i) 
+        #         #root_one = copy.copy(roots[i])
+        #         #root_two = copy.copy(roots[i+1])
+        #         temp_transf = lambda E: np.heaviside(E - roots[i], 0)*np.heaviside(roots[i+1]-E, 0)
+        #         print(temp_transf(0.2))
+        #         transf_list.append(temp_transf)
+        #     if len(roots) % 2 != 0:
+                
+        #         transf_list.append(lambda E: np.heaviside(roots[-1] - E,0))
+        # else:
+        #     transf_list.append(lambda E: np.heaviside(E - roots[0], 0))
+        #     root_end = len(roots) - 1 if len(roots) % 2 != 0 else len(roots) - 2
+        #     for i in range(1,root_end,2): 
+        #         temp_transf = lambda E: np.heaviside(E - roots[i], 0)*np.heaviside(roots[i+1]-E, 0)
+        #         transf_list.append(temp_transf)
+        #     if len(roots) % 2 != 0:
+        #         transf_list.append(lambda E: np.heaviside(roots[-1] - E,0))
+        # print(transf_list[0](0.2), transf_list[1](0.2))
+        # transf = lambda E: sum([x(E) for x in transf_list])
+        
+        #if len(roots) % 2 == 0:
+        #print(transf(0.2))
+        jmax = self._current_integral(self.coeff_con, transf)
+        #print(transf(np.linspace(-0.5,1)))
+        return jmax, transf, roots
 
-def slice_constraint(transf, E_mids, muL, TL, muR, TR, deltaE):
-    electric, integrands = slice_current_integral(transf, E_mids, muL, TL ,muR, TR, deltaE,type = "heat", return_integrands=True)
-    sgn_integrands = np.sign(integrands[np.argwhere(integrands != 0)]).flatten()-1#np.sign(np.where(integrands != 0)[0])-1
-    #print(sgn_integrands)
-    print(np.sum(sgn_integrands))
-    return np.sum(sgn_integrands)
+    def adjust_limits(self):
+        jmax, transf, roots = self.constrained_current_max()
+        lowest = np.min(roots)
+        highest = np.max(roots)
+        self.E_min = lowest - 0.1*lowest
+        self.E_max = highest + 0.1*highest
 
-def pertub_fermi(E, muL, TL, pertub):
-    fermi = fermi_dist(E,muL,TL)
+    #TODO: Fix subdivide. Just change E_low and E_high according to the limits of the cooling regime for now.
+    def _current_integral(self, coeff, transf_in = None):
+        if transf_in == None:
+            #print("In wrong place")
+            transf = self.transf
+        else:
+            transf = transf_in     
+        integrand = lambda E: self.N*1/h*coeff(E)*transf(E)*(self.occupf_L(E)- self.occupf_R(E))
+        
+        if self.subdivide:
+            coarse_Es = np.linspace(self.E_low, self.E_high,10000)
+            coarse_E_lows = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == 1)]
+            #print(coarse_E_lows)
+            coarse_E_highs = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == -1)]
+            
+        # if len(coarse_E_highs) == 0 and len(coarse_E_lows) == 0:
+        #     coarse_Es = np.linspace(np.sign(self.E_low)*1.5*self.E_low, 0.2*self.E_high,10000)
+        #     coarse_E_lows = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == 1)]
+        #     #print(coarse_E_lows)
+        #     coarse_E_highs = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == -1)]
+                
+            #print(len(coarse_E_highs))
+            #print(coarse_E_highs)
+            #g = 0.01
+            E_lows = 0.8*coarse_E_lows
+            E_highs = 1.2*coarse_E_highs
+            #E_lows = [fsolve(lambda E: transf(E-g) + transf(E+g) - 1 , 0.9*coarse_E_low, factor=1) for coarse_E_low in coarse_E_lows]
+            #E_highs = [fsolve(lambda E: transf(E-g) + transf(E+g) + 1, 0.9*coarse_E_high,factor=1) for coarse_E_high in coarse_E_highs]
+            #print(E_lows)
+            #print(E_highs)
+            current = 0
+            for i in range(len(E_lows)):
+                current_i, err = integrate.quad(integrand, E_lows[i], E_highs[i], args=(), points=self.occuproots)
+                current += current_i
+        else:
+            current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+        return current
+
+    def noise_cont(self, coeff, transf = None):
+        if transf == None:
+            transf = self.transf
+        thermal = lambda E: self.N*coeff(E)**2*transf(E)*(self.occupf_L(E)*(1-self.occupf_L(E))+ self.occupf_R(E)*(1-self.occupf_R(E)))
+        shot = lambda E: coeff(E)**2 * self.N**2*transf(E)*(1-transf(E))*(self.occupf_L(E)+self.occupf_R(E))**2
+        integrand = lambda E: thermal(E) + shot(E)
+        current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points = self.occuproots, limit = 100)
+        return current
+    
+    def _transmission_avg(self, C, coeff_x, coeff_y):
+        x_integrands = lambda E: coeff_x(E)*(self.occupf_L(E)- self.occupf_R(E))
+        y_integrands = lambda E: coeff_y(E)*(self.occupf_L(E)- self.occupf_R(E))
+        #transf = lambda E: np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E)*in_integrands(E), 0)+np.heaviside(-coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E)*in_integrands(E), 0)
+        transf = lambda E: np.heaviside(-(coeff_y(E) - C*coeff_x(E))*(self.occupf_L(E) - self.occupf_R(E)), 0.5)
+        #transf = lambda E: np.heaviside(coeff_x(E)/coeff_y(E) - C, 0.5)*np.heaviside(y_integrands(E),0.5)* np.heaviside(x_integrands(E), 0.5)
+        # if self.debug:
+        #     print("C",C)
+            # print("Con current", self._current_integral(coeff_x,transf))
+        return transf
+    def optimize_for_avg(self,target, C_init = None, fixed = "nominator", secondary = False):
+        '''
+        Make sure coeffs are defined such that positive contributions to currents are desirable and negative suppressed
+        '''
+        if fixed == "nominator":
+            coeff_nom = self.coeff_con
+            coeff_denom = self.coeff_avg
+            
+        else:
+            coeff_denom = self.coeff_con
+            coeff_nom = self.coeff_avg
+            
+
+        transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
+
+        if C_init == None:
+            temp_Es = np.linspace(self.E_low, self.E_high, 100)
+            x_integrands = lambda E: coeff_nom(E)*(self.occupf_L(E)- self.occupf_R(E))
+            y_integrands = lambda E: coeff_denom(E)*(self.occupf_L(E)- self.occupf_R(E))
+            func_C = coeff_nom(temp_Es)/coeff_denom(temp_Es)*np.heaviside(y_integrands(temp_Es),0.5)* np.heaviside(x_integrands(temp_Es), 0.5)
+            C_max = np.max(func_C)
+            C_init = 0.9*C_max
+            if self.debug:
+                print("C_init: ", C_init)
+            
+            test_current = self._current_integral(self.coeff_con, transf(C_init))
+            # while(test_current == 0):
+            #     if self.debug:
+            #         print(("Entering while loop"))
+            #     C_init /= 2
+                # test_current = self._current_integral(self.coeff_con, transf(C_init))
+            if self.debug:
+                print("C_init: ", C_init)
+
+        if secondary:
+            def fixed_current_eq(thetas, h = 0.01):
+                C = thetas[0]
+                z = thetas[1]
+                self.z = z
+                self.update_occupf_L()
+                self.set_occup_roots()
+                current = self._current_integral(self.coeff_con,transf(C))
+                print("Current: ", current)
+                print("C: ",C)
+                if current == 0:
+                    C = 0.5*C               
+                
+                
+                self.z = z + h
+                self.update_occupf_L()
+                self.set_occup_roots()
+
+                avg_high = self._current_integral(self.coeff_avg,transf(C))
+                con_high = self._current_integral(self.coeff_con,transf(C))
+
+                self.z = z - h
+                self.update_occupf_L()
+                self.set_occup_roots()
+
+                avg_low = self._current_integral(self.coeff_avg,transf(C))
+                con_low = self._current_integral(self.coeff_con,transf(C))
+
+
+                if self.debug:
+                    print(avg_high-avg_low)
+                    print(con_high-con_low)
+                    print("Diff div: ",(avg_high-avg_low)/(con_high-con_low))
+
+                return [self._current_integral(self.coeff_con,transf(C)) - target, (avg_high-avg_low)/(con_high-con_low) - C]
+            res = fsolve(fixed_current_eq,[C_init, self.z], factor = 0.1, xtol = 1e-6)
+            self.z = res[1]
+            self.update_occupf_L()
+            self.set_occup_roots()
+            
+            self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
+            return res
+
+
+        else:
+            fixed_current_eq = lambda C: self._current_integral(self.coeff_con,transf(C)) - target
+            res = fsolve(fixed_current_eq,C_init, factor = 0.1, xtol = 1e-6)
+            self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
+            return res[0]
+
+    
+    def _noise_condition(self):
+        div = lambda E: self.coeff_noise(E)**2*(self.occupf_L(E) *(1-self.occupf_L(E)) + self.occupf_R(E)*(1-self.occupf_R(E)))
+        return lambda E: self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E))/div(E)
+
+    def _transmission_noise(self, C):
+        integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+        comp = self._noise_condition()
+        transf = lambda E: np.heaviside(comp(E) - C, 0)*np.heaviside(integrands(E), 0) \
+                #+np.heaviside(- (comp - C), 0)*np.heaviside(-integrands, 0)
+        if self.debug:
+            print("C",C)       
+            print("Con current", self._current_integral(self.coeff_con,transf))
+        
+        return transf
+
+    def optimize_for_noise(self, target, C_init = None, secondary = False):
+        
+        transf = lambda C: self._transmission_noise(C)
+        if C_init == None:
+            temp_Es = np.linspace(self.E_low, self.E_high, 100)
+            con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+            func_C = self._noise_condition()(temp_Es)*np.heaviside(con_integrands(temp_Es),0)
+            func_C = func_C[~np.isnan(func_C)]
+            C_max = np.max(func_C)
+            C_init = 0.9*C_max
+            if self.debug:
+                print("C_init: ", C_init)
+
+            test_current = self._current_integral(self.coeff_con, transf(C_init))
+            while(test_current == 0):
+                if self.debug:
+                    print(("Entering while loop"))
+                C_init /= 2
+                test_current = self._current_integral(self.coeff_con, transf(C_init))
+            if self.debug:
+                print("C_init: ", C_init)
+        
+        fixed_current_eq = lambda C: self._current_integral(self.coeff_noise, transf(C)) - target
+        res = fsolve(fixed_current_eq,C_init, factor = 1, xtol=1e-6)
+        self.transf = self._transmission_noise(res[0])
+        return res[0]
+
+
+    def _product_condition(self,thetas):
+        div = lambda E: self.coeff_con(E)*(self.occupf_L(E)-self.occupf_R(E))
+        term_one = lambda E: -thetas[0]*self.coeff_noise(E)**2*(self.occupf_L(E)*(1-self.occupf_L(E))+self.occupf_R(E)*(1-self.occupf_R(E)))#/div(E)
+        term_two = lambda E: -thetas[1]*self.coeff_avg(E)*(self.occupf_L(E)-self.occupf_R(E))#/div(E)
+        term_three = lambda E: thetas[2]*div(E)
+        opt_func = lambda E: term_one(E)+term_two(E)+term_three(E)
+        return opt_func
+
+    def _transmission_product(self,thetas):
+        con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+        avg_integrands = lambda E: self.coeff_avg(E)*(self.occupf_L(E)- self.occupf_R(E))
+            
+        #print(-thetas[0]*thetas[1] + max_prod)
+        transf = lambda E: np.heaviside(self._product_condition(thetas)(E), 0)*np.heaviside(avg_integrands(E),0)*np.heaviside(con_integrands(E),0)
+        return transf
+        
+    def optimize_for_product(self, target, thetas_init = None, alpha = 0.5, secondary = False):
+        if thetas_init == None:
+            max_transf = lambda E: np.heaviside(self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
+            self.transf = max_transf
+            max_noise = self.noise_cont(self.coeff_noise)
+            max_avg = self._current_integral(self.coeff_avg)
+            temp_Es = np.linspace(self.E_low, self.E_high, 100)
+            con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+            avg_integrands = lambda E: self.coeff_avg(E)*(self.occupf_L(E)- self.occupf_R(E))
+            div = self.coeff_con(temp_Es)*(self.occupf_L(temp_Es)-self.occupf_R(temp_Es))
+            zero_index = np.argwhere(div == 0)
+            div = np.delete(div, zero_index)
+            temp_Es = np.delete (temp_Es, zero_index)
+            func_C = self._product_condition([max_avg/2, max_noise/2, 0])(temp_Es)/(div)*np.heaviside(con_integrands(temp_Es),0)*np.heaviside(avg_integrands(temp_Es),0)
+            func_C = func_C[~np.isnan(func_C)]
+            C_init = -np.min(func_C)/10
+            thetas_init = [max_avg/10, max_noise/10, C_init]
+            #print(C_max)
+            test_current = self._current_integral(self.coeff_con, self._transmission_product(thetas_init))
+            while(test_current == 0):
+                if self.debug:
+                    print(("Entering while loop"))
+                C_init *= 2
+                test_current = self._current_integral(self.coeff_con, self._transmission_product(thetas_init))
+            if self.debug:
+                print("C_init: ", C_init)
+            thetas_init = [max_avg/10, max_noise/10, C_init]
+            #thetas_init = [max_avg/2, max_noise/2, 0.1]
+            if self.debug:
+                print("Thetas init: ", thetas_init)
+
+        def opt_func(thetas):
+            transf = self._transmission_product(thetas)
+            nois = self.noise_cont(self.coeff_noise, transf)
+            avg = self._current_integral(self.coeff_avg, transf)
+            con = self._current_integral(self.coeff_con, transf)
+            if self.debug: 
+                print("Thetas: ", thetas)
+                print("opt func: ", avg - thetas[0], nois - thetas[1], con-target)
+            return avg - thetas[0], nois - thetas[1], con-target
+        
+        res = fsolve(opt_func, thetas_init, factor=1, xtol=1e-6)
+        self.transf = self._transmission_product(res)
+        return res
+
+    def carnot(self):
+        return (1-self.TR/self.TL)
+
+    def cop(self):
+        return self.TR/(self.TL-self.TR)
+
+    def pmax(self):
+        A = 0.0321
+        p = A * np.pi**2/h * self.N * kb**2 *(self.TL-self.TR)**2
+        return p
+
+    def jRmax(self):
+        coeff = lambda E:-E+self.muR
+        transf = lambda E: np.heaviside(coeff(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
+        current = self._current_integral(coeff, transf)
+        return current, transf
+
+    def E_max(self):
+        if self.TL-self.TR == 0:
+            return 0
+        #print(((deltaT+T)*mu - T*(deltamu+mu))/deltaT)
+        return (self.TL*self.muR - self.TR*self.muL)/(self.TL-self.TR)
+
+
+    def fermi_dist(E, mu, T):
+        f_dist = 1/(1+np.exp((E-mu)/(T*kb)))
+        return f_dist
+    
+    
+    ## SLICED FUNCTIONS ##
+    
+    def slice_current_integral(self, coeff, transf_in = None, return_integrands = False, n_Es = 100):
+        E_mids = np.linspace(self.E_low, self.E_high, n_Es)
+        occupdiff = self.occupf_L(E_mids)- self.occupf_R(E_mids)
+        deltaE = E_mids[1]-E_mids[0]
+
+        if transf_in == None:
+            transf = self.transf
+        integrands = 1/h*coeff(E_mids)*transf*occupdiff*deltaE
+
+        current = np.trapz(integrands, E_mids)
+        if return_integrands:
+            return current, integrands
+        return current
+    
+    def slice_constraint(self, coeff, target, transf = None):
+        current = self.slice_current_integral(coeff, transf)
+        return target-current
+    
+    def slice_maximize_eff(self, coeff_in, coeff_out,transf= None):
+        input = self.slice_current_integral(coeff_in, transf)
+        output = self.slice_current_integral(coeff_out,transf)
+        eff = output/input
+        return -eff
+
+
+    
+
+def pertub_dist(E, dist, pertub):
+    fermi = dist(E)
     #pertub = fpertub(E)
     dist = fermi + pertub
     if type(dist) == np.ndarray:
@@ -251,193 +553,4 @@ def pertub_fermi(E, muL, TL, pertub):
             dist = 1
     return dist
 
-def calc_dJR_dP_dmu(transf, E, muL, TL, muR, TR,occupf_L = fermi_dist, h = 0.01):
-    if muR != 0:
-        print("only for muR = 0 right now :(")
-        return -1,-1
-    mus = [muL-h, muL+h]
-    [heatL_lowmu, heatL_highmu] = [slice_current_integral(transf, E, mus[0], TL, muR, TR, occupf_L, type = "heat"),slice_current_integral(transf, E, mus[1], TL, muR, TR, occupf_L, type = "heat")]
-    [heatR_lowmu, heatR_highmu] = [slice_current_integral(transf, E, mus[0], TL, muR, TR, occupf_L, type = "heatR"),slice_current_integral(transf, E, mus[1], TL, muR, TR, occupf_L, type = "heatR")]
-    TLs = [TL-h/2, TL+h/2]
-    TRs = [TR+h/2, TR-h/2]
-    [heatL_lowT, heatL_highT] = [slice_current_integral(transf, E, muL, TLs[0], muR, TRs[0], occupf_L, type = "heat"),slice_current_integral(transf, E, muL, TLs[1], muR, TRs[1], occupf_L, type = "heat")]
-    [heatR_lowT, heatR_highT] = [slice_current_integral(transf, E, muL, TLs[0], muR, TRs[0], occupf_L, type = "heatR"),slice_current_integral(transf, E, muL, TLs[1], muR, TRs[1], occupf_L, type = "heatR")]
-    #print(heatR_high)
-    #print(heatR_low)
-    #print(heatL_high+heatR_high)
-    #print(heatL_low+heatR_low)
-    #print(heatL_low)
-    #print(heatR_low)
-    dJ_dmu = (heatL_highmu - heatL_lowmu)/(2*h)
-    dP_dmu = (heatR_highmu- heatR_lowmu)/(2*h) + dJ_dmu
-    dJ_dT = (heatL_highT - heatL_lowT)/(2*h)
-    dP_dT = (heatR_highT- heatR_lowT)/(2*h) + dJ_dT
-    
-    #dJ_dmu = (heatR_high - heatR_low)/(h)
-    #dP_dmu = (heatL_high- heatL_low)/(h) + dJ_dmu
-    return dJ_dmu, dP_dmu, dJ_dT, dP_dT
 
-def calc_dJR_dtau_at_P(E, muL, TL,  dP_dtau, Jprim, Pprim,occupf_L=fermi_dist):
-    coeff = entropy_coeff(E,muL,TL,occupf_L)
-    #print((E/(E+TL*kb*coeff) - Jprim/Pprim))
-    E1 = -coeff/(E-coeff) - Jprim/Pprim
-    dJR_dtau = (E1)*dP_dtau
-    #dJR_dtau = (E/(muL) - Jprim/Pprim)*dP_dtau
-    #dJR_dtau = (1-Jprim/Pprim*(1+E/(-E+muL)))*dP_dtau
-    return dJR_dtau
-
-def opt_transf_weird(c_eta, r_E, muL, TL, muR, TR, target_p, deltaE, foccup_L):
-    mom_etas_diff = lambda E: (E-entropy_coeff(E, muL, TL, foccup_L))/(-entropy_coeff(E, muL, TL, foccup_L)) - c_eta
-    #print(mom_etas_diff(np.array([1,2])))
-    occupdiff = lambda E: foccup_L(E,muL,TL)- fermi_dist(E,muR,TR)
-    occup_zero = fsolve(occupdiff, r_E[0])[0]
-    #print((occup_zero))
-    #print(occupdiff(occup_zero + deltaE) -  occupdiff(occup_zero - deltaE))
-    #if type(occup_zero) == float:
-    occup_zero = np.array([occup_zero])
-    E_starts = np.linspace(r_E[0], r_E[-1], 10)
-    #for E_start in E_starts:
-    #    print(fsolve(mom_etas_diff, E_start))
-    mom_etas_zero = np.sort(fsolve(mom_etas_diff, E_starts, factor = 0.1))
-    #print(mom_etas_zero)
-    cutoff = np.argwhere(mom_etas_zero > r_E[-1])
-    #print(cutoff)
-    if len(cutoff) != 0:
-        mom_etas_zero = mom_etas_zero[:cutoff[0,0]]
-    print(mom_etas_zero)
-    mom_etas_zero = mom_etas_zero[np.isclose(mom_etas_diff(mom_etas_zero), np.zeros_like(mom_etas_zero), atol = 1e-3)]
-    mom_etas_zero = np.unique(mom_etas_zero)#.round(decimals=6))
-    #print(np.unique(mom_etas_zero.round(decimals=3)))
-#print(np.isclose(mom_etas_diff(mom_etas_zero), np.zeros_like(mom_etas_zero), atol = 1e-3))
-#print(mom_etas_diff(mom_etas_zero))
-    #print(mom_etas_zero)
-   
-    #if type(mom_etas_zero) == float:
-    mom_etas_zero = np.array([mom_etas_zero])
-
-    occup_sign = np.sign(occupdiff(occup_zero + deltaE) -  occupdiff(occup_zero - deltaE))
-    mom_etas_sign = np.sign(mom_etas_diff(mom_etas_zero + deltaE) -  mom_etas_diff(mom_etas_zero - deltaE))
-    #print(occup_zero)
-    #print(mom_etas_zero)
-    flip_to_zero = np.sort(np.append(occup_zero[occup_sign < 0], mom_etas_zero[mom_etas_sign < 0]))
-    flip_to_one = np.sort(np.append(occup_zero[occup_sign > 0], mom_etas_zero[mom_etas_sign > 0]))
-
-    # The flips should be monotonically increasing by checking first the index 0 in flip_to_zero, then index 0 in flip_to_one, then 1 in flip_to_zero, then 1 in flip_to_one and so on. 
-    # The arrays might be differently sized at first, but if we start and and at zero transf, then they should be of equal length
-    print(f"before one:{flip_to_one}")
-    print(f"before zero:{flip_to_zero}")
-
-    max_len = len(flip_to_zero) if len(flip_to_zero) >= len(flip_to_one) else len(flip_to_one)
-    tmp_flip_zero = []
-    tmp_flip_one = []
-    for i in range(0,max_len - 1):
-        check_zero = False
-        check_one = False
-        while (not check_one or not check_zero):
-            if len(flip_to_one) <= i+1:
-                break
-            if len(flip_to_zero) <= i+1:
-                break
-            #print("in while loop")
-            check_zero = flip_to_zero[i] > flip_to_one[i]
-            #print(flip_to_zero[i])
-            #print(max_len-2)
-            if i != max_len-2:
-                check_one = flip_to_one[i+1] > flip_to_zero[i]
-            else:
-                check_one = True
-            #print(check_zero)
-            #print(check_one)
-            #if check_one and check_zero:
-            #    continue
-                #if i != 0:
-                #    tmp_flip_one.append(flip_to_one[i+1])
-                #    tmp_flip_zero.append(flip_to_zero[i])
-                #else:
-                #    tmp_flip_one.append(flip_to_one[i])
-                #    tmp_flip_one.append(flip_to_one[i+1])
-                #    tmp_flip_zero.append(flip_to_zero[i])
-            if check_zero and not check_one:
-                flip_to_one = np.delete(flip_to_one, i+1)
-    #            tmp_flip_zero.append(flip_to_zero[i])
-            if check_one and not check_zero:
-                flip_to_zero = np.delete(flip_to_zero,i)
-        
-        #print(i)
-        #print(flip_to_one)
-        #print(flip_to_zero)
-        if len(flip_to_one) <= i+1:
-            break
-        if len(flip_to_zero) <= i+1:
-            break
-        #if check_one:
-                #tmp_flip_zero.append(flip_to_zero[i])
-        #    tmp_flip_one.append(flip_to_one[i+1])
-    
-    if len(flip_to_zero) != len(flip_to_one):
-        
-        
-        if len(flip_to_one) > len(flip_to_zero) and len(flip_to_zero) != 0:
-            flip_to_one = flip_to_one[:len(flip_to_zero)]
-        if len(flip_to_zero) > len(flip_to_one) and len(flip_to_one) != 0:
-            flip_to_zero = flip_to_zero[:len(flip_to_one)]
-
-    #        while len(flip_to_one) != len(flip_to_zero):
-    #            check_zero = flip_to_zero[-1] > flip_to_one[-1]
-    #            if len(flip_to_zero) > 1:
-    #                check_one = flip_to_zero[-2] < flip_to_one[-1]
-    #            else:
-    #                check_one = True
-    #            if not check_one or not check_zero:
-    #                flip_to_one = np.delete(flip_to_one, -1)
-
-
-    #flip_to_one = np.array(tmp_flip_one)
-    #flip_to_zero = np.array(tmp_flip_zero)
-
-
-    print(f"after one:{flip_to_one}")
-    print(f"after zero: {flip_to_zero}")
-    if len(flip_to_one) != 0 and len(flip_to_zero) != 0:
-        if np.min(flip_to_one) < np.min(flip_to_zero):
-            start_with_zero = True
-        else:
-            start_with_zero = False
-    else: 
-        start_with_zero = True    
-    if start_with_zero:
-        if len(flip_to_zero) != 0:
-            def wrapper_transf(E):
-                transf_func = 0
-                for flip_i in range(len(flip_to_zero)):
-                    #print(np.heaviside(E-flip_to_one[flip_i],1)*np.heaviside(flip_to_zero[flip_i]-E,1))
-                    transf_func += np.heaviside(E-flip_to_one[flip_i],1)*np.heaviside(flip_to_zero[flip_i]-E,1)
-                return transf_func
-            transf_func = lambda E: wrapper_transf(E)#lambda E: np.prod((np.heaviside(E-flip_to_one+1,1)*np.heaviside(flip_to_zero-E,1)))
-            #transf_func = lambda E: np.prod((np.heaviside(E - flip_to_one, 1) * np.heaviside(flip_to_zero - E,1)))
-        else:
-            transf_func = lambda E: np.prod((np.heaviside(E - flip_to_one, 1)))
-    else: 
-        transf_func = lambda E: np.prod((np.heaviside(E - flip_to_zero, 1) * np.heaviside(flip_to_one - E,1)))
-    
-    heatL = current_integral(r_E[0], r_E[-1], muL, TL, muR, TR, transf_func, foccup_L, type = "heat")
-    heatR = current_integral(r_E[0], r_E[-1], muL, TL, muR, TR, transf_func, foccup_L, type = "heatR")
-    #print(heatL)
-    #heatL = slice_current_integral(transf_func(r_E), r_E, muL, TL, muR, TR, deltaE, foccup_L, type = "heat")
-    #heatR = slice_current_integral(transf_func(r_E), r_E, muL, TL, muR, TR, deltaE, foccup_L, type = "heatR")
-    power = heatL+heatR
-    #print(power)
-    print(c_eta)
-    return power - target_p
-def opt_transf(c_eta, r_E, muL, TL, muR, TR, target_p, foccup_L):
-    mom_etas = (r_E-entropy_coeff(r_E, muL, TL, foccup_L))/(-entropy_coeff(r_E, muL, TL, foccup_L))
-    
-    occupdiff = foccup_L(r_E,muL,TL)- fermi_dist(r_E,muR,TR)
-    #rint(occupdiff)
-    transf = np.zeros_like(mom_etas)
-    transf[mom_etas > c_eta] = 1
-    transf[occupdiff < 0] = 0
-    heatL = slice_current_integral(transf, r_E, muL, TL, muR, TR, foccup_L, type = "heat")
-    heatR = slice_current_integral(transf, r_E, muL, TL, muR, TR, foccup_L, type = "heatR")
-    power = heatL+heatR
-    return power - target_p

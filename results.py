@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import copy
 
-from thermo_funcs_three import two_terminals
+from thermo_funcs import two_terminals
 from scipy.optimize import fsolve
 
 def thermal_with_lorentz(mu, T, width, height, position):
@@ -13,8 +13,8 @@ def thermal_with_lorentz(mu, T, width, height, position):
     reflect = lambda E: -height_factor * (width/((E+position)**2 + width**2))
     fermi = lambda E: two_terminals.fermi_dist(E,mu,T)
     dist = lambda E: fermi(E) + lorentzian(E) + reflect(E)
-    if dist(position) < 0 or dist(position) > 1:
-        print("Warning! Invalid occupation function", dist(position))
+    # if dist(position) < 0 or dist(position) > 1:
+    #     print("Warning! Invalid occupation function", dist(position))
     
     return dist
 
@@ -56,13 +56,13 @@ def check_buttiker_probe(system):
     plt.legend()
     #plt.show()
 
-def check_avg_optimization(system:two_terminals):
+def check_avg_optimization(system:two_terminals, secondary = False):
     sys_copy = copy.deepcopy(system)
     max_cool, mc_transf, roots = sys_copy.constrained_current_max()
     #max_cool, mc_transf = sys_copy.jRmax()
     target = 0.5*max_cool
     
-    C = sys_copy.optimize_for_avg(target)
+    res = sys_copy.optimize_for_avg(target, secondary = secondary)
     transf_avg = sys_copy.transf #thermal_left._transmission_avg(0.1,thermal_left.coeff_con, thermal_left.coeff_avg)#
     #transf_avg = sys_copy._transmission_avg(1, sys_copy.coeff_con, sys_copy.coeff_avg)
     #thermal_left.transf = mc_transf
@@ -75,7 +75,9 @@ def check_avg_optimization(system:two_terminals):
     #transf_avg = lambda Es: np.heaviside(thermal_left.coeff_con(Es)/thermal_left.coeff_avg(Es) - 0.1,0)*np.heaviside(thermal_left.coeff_con(Es)*(thermal_left.occupf_L(Es) - thermal_left.occupf_R(Es)),0)*np.heaviside(thermal_left.coeff_avg(Es)*(thermal_left.occupf_L(Es) - thermal_left.occupf_R(Es)),0)
     print("Target: ", target)
     print("Difference from target: ", sys_copy._current_integral(sys_copy.coeff_con)- target)
+    print("Efficiency: ", sys_copy.get_efficiency())
     plt.plot(Es, transf_avg(Es), label = "transf avg", zorder = 4)
+    return res
     #plt.plot(Es, np.heaviside(thermal_left.coeff_con(Es)/thermal_left.coeff_avg(Es)-0.3,0))
     #plt.show()
 def check_noise_optimization(system:two_terminals):
@@ -243,10 +245,10 @@ class PowerPlot:
 
 if __name__ == "__main__":
     check_probe= False
-    check_avg = False
+    check_avg = True
     check_noise = False
     check_product = False
-    check_max = False
+    check_max = True
     midT = 1
     deltaT = 0.5
     deltamu = -1
@@ -281,22 +283,34 @@ if __name__ == "__main__":
     nonthermal_left.coeff_avg = lambda E: nonthermal_left.left_entropy_coeff(E)#thermal_left.left_noneq_free_coeff(E)
     nonthermal_left.coeff_noise = lambda E: -nonthermal_left.right_entropy_coeff(E)
 
+
+    active_system = thermal_left
+
+    test_occup = lambda E,muL:thermal_with_lorentz(muL, TL, 0.1 ,-0.1, 1)(E)#lambda E, muL: two_terminals.fermi_dist(E,muL, TL)
+    #active_system.set_occupf_L(test_occup, -1)
+    #active_system.E_low = -5
+    #active_system.E_high = 5
+    active_system.debug = True
     if check_avg:
         #plt.plot(Es,thermal_left.coeff_con(Es)/thermal_left.coeff_avg(Es), label = "Comp")
-        plt.plot(Es,thermal_left.coeff_con(Es)*(thermal_left.occupf_L(Es)- thermal_left.occupf_R(Es)), label = "con")
+        plt.plot(Es,active_system.coeff_con(Es)*(active_system.occupf_L(Es)- active_system.occupf_R(Es)), label = "con")
         #plt.plot(Es,thermal_left.right_heat_coeff(Es)/thermal_left.TR*(thermal_left.occupf_L(Es)- thermal_left.occupf_R(Es)), label = "con 2")
         #plt.plot(Es,thermal_left.left_heat_coeff(Es)/thermal_left.TL*(thermal_left.occupf_L(Es)- thermal_left.occupf_R(Es)), label = "avg")
-        plt.plot(Es,thermal_left.coeff_avg(Es)*(thermal_left.occupf_L(Es)- thermal_left.occupf_R(Es)), label = "avg")
+        plt.plot(Es,active_system.coeff_avg(Es)*(active_system.occupf_L(Es)- active_system.occupf_R(Es)), label = "avg")
         plt.hlines(0,Es[0], Es[-1])
         plt.legend()
         plt.show()
-        check_avg_optimization(thermal_left)
+        res = check_avg_optimization(active_system, False)
+        print(res)
+        #print("Efficiency old: ", active_system.get_efficiency())
+        #active_system.z = res[1]
+        #active_system.update_occupf_L()
 
     if check_noise:
-        check_noise_optimization(thermal_left)
+        check_noise_optimization(active_system)
 
     if check_product:
-        check_product_optimization(thermal_left)
+        check_product_optimization(active_system)
     
     #thermal_left = two_terminals(E_low, E_high, muL=muL, TL =TL, muR = muR, TR = TR, N = 1)
     
@@ -304,13 +318,15 @@ if __name__ == "__main__":
     #    check_avg_optimization(nonthermal_left)
     
     if any([check_avg, check_noise, check_product, check_max]):
-        plot_max(thermal_left)
+        plot_max(active_system)
+        
+        plt.plot(Es, test_occup(Es, -0.5), label = "init")
         plt.legend()
         plt.show()
 
-    powerPlot = PowerPlot(thermal_left, nonthermal_left, True)
-    fig = powerPlot.make_figure(make_eff=True, make_noise=True, make_product=True)
-    plt.savefig("Test_powerplot.png")
+    # powerPlot = PowerPlot(thermal_left, nonthermal_left, True)
+    # fig = powerPlot.make_figure(make_eff=True, make_noise=True, make_product=True)
+    # plt.savefig("Test_powerplot.png")
 
-    fig = powerPlot.make_dist_figure()
-    plt.savefig("test_dist.png")
+    # fig = powerPlot.make_dist_figure()
+    # plt.savefig("test_dist.png")
