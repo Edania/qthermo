@@ -232,8 +232,8 @@ class two_terminals:
         jmax, transf, roots = self.constrained_current_max()
         lowest = np.min(roots)
         highest = np.max(roots)
-        self.E_min = lowest - 0.1*lowest
-        self.E_max = highest + 0.1*highest
+        self.E_min = lowest - 0.5*lowest
+        self.E_max = highest + 0.5*highest
 
     #TODO: Fix subdivide. Just change E_low and E_high according to the limits of the cooling regime for now.
     def _current_integral(self, coeff, transf_in = None):
@@ -415,7 +415,7 @@ class two_terminals:
                 print("C_init: ", C_init)
         
         fixed_current_eq = lambda C: self._current_integral(self.coeff_noise, transf(C)) - target
-        res = fsolve(fixed_current_eq,C_init, factor = 1, xtol=1e-6)
+        res = fsolve(fixed_current_eq,C_init, factor = 0.1, xtol=1e-6)
         self.transf = self._transmission_noise(res[0])
         return res[0]
 
