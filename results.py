@@ -67,7 +67,7 @@ def check_avg_optimization(system:two_terminals, secondary = False, C_init = Non
     sys_copy = copy.deepcopy(system)
     max_cool, mc_transf, roots = sys_copy.constrained_current_max()
     #max_cool, mc_transf = sys_copy.jRmax()
-    target = 0.1#0.5*max_cool
+    target = 0.2#0.5*max_cool
     
     res = sys_copy.optimize_for_avg(target, secondary = secondary, C_init = C_init)
     transf_avg = sys_copy.transf #thermal_left._transmission_avg(0.1,thermal_left.coeff_con, thermal_left.coeff_avg)#
@@ -416,7 +416,7 @@ if __name__ == "__main__":
             #plt.show()
 
         if check_avg:
-            active_system.muR = 4.5
+            active_system.muR = 4.3
             active_system.set_fermi_dist_right()
 
            #C = 10
@@ -429,10 +429,10 @@ if __name__ == "__main__":
             plt.hlines(0,Es[0], Es[-1])
             plt.legend()
             plt.show()
-            res = check_avg_optimization(active_system, True,0.9)
+            res = check_avg_optimization(active_system, True,1.85)
             active_system.muR = res[1]
             active_system.set_fermi_dist_right()
-            C = res[0]            
+            #C = res[0]            
             # C_list = []
             # Iy_list = []
             # dd_list = []
@@ -442,10 +442,11 @@ if __name__ == "__main__":
             #     active_system.set_fermi_dist_right()
                 
             #     #plt.show()
-            #     #active_system.adjust_limits()
+            #     active_system.adjust_limits()
             #     #print(active_system.E_high)
-            #     C = active_system.optimize_for_avg(0.1, 5)
-                
+            #     C = active_system.optimize_for_avg(0.1, 10)
+            #     res = check_avg_optimization(active_system, False,10)
+            #     plt.show()
             #     Iy = active_system._current_integral(active_system.coeff_avg)
             #     davg_integrand = lambda E: active_system.coeff_avg(E)*active_system.transf(E)*(active_system.occupf_R(E)**2 *(np.exp((E-active_system.muR)/active_system.TR))/active_system.TR)
             #     dcon_integrand = lambda E: active_system.transf(E)*((active_system.occupf_L(E)- active_system.occupf_R(E))/TR - active_system.coeff_con(E)*(active_system.occupf_R(E)**2 *(np.exp((E-active_system.muR)/active_system.TR))/active_system.TR))

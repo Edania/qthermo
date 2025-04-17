@@ -339,6 +339,7 @@ class two_terminals:
 
                 self.muR = z
                 self.set_fermi_dist_right()
+                transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
                 # self.z = z
                 # self.update_occupf_L()
                 # self.set_occup_roots()
@@ -349,13 +350,18 @@ class two_terminals:
                 #
                 if current == 0:
                      C = 2*C               
-                davg_integrand = lambda E: self.coeff_avg(E)*self.transf(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
-                dcon_integrand = lambda E: self.transf(E)*((self.occupf_L(E)- self.occupf_R(E))/self.TR - self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
+                # davg_integrand = lambda E: self.coeff_avg(E)*self.transf(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
+                # dcon_integrand = lambda E: self.transf(E)*((self.occupf_L(E)- self.occupf_R(E))/self.TR - self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
 
-                # davg_integrand = lambda E: self.N*1/h*self.coeff_avg(E)*transf(C)(E)*(self.occupf_R(E)**2 *(-np.exp((E-self.muR)/self.TR))/self.TR)
-                # dcon_integrand = lambda E: self.N*1/h*transf(C)(E)*((self.occupf_L(E)- self.occupf_R(E)) + self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
+                # # davg_integrand = lambda E: self.N*1/h*self.coeff_avg(E)*transf(C)(E)*(self.occupf_R(E)**2 *(-np.exp((E-self.muR)/self.TR))/self.TR)
+                # # dcon_integrand = lambda E: self.N*1/h*transf(C)(E)*((self.occupf_L(E)- self.occupf_R(E)) + self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
+                # davg_current, err = integrate.quad(davg_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+                # dcon_current, err = integrate.quad(dcon_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+                davg_integrand = lambda E: self.coeff_avg(E)*transf(C)(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
+                dcon_integrand = lambda E: transf(C)(E)*((self.occupf_L(E)- self.occupf_R(E))/self.TR - self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
                 davg_current, err = integrate.quad(davg_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
                 dcon_current, err = integrate.quad(dcon_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+                comp = -davg_current/dcon_current
                 # self.z = z + h
                 # self.update_occupf_L()
                 # self.set_occup_roots()
@@ -376,8 +382,8 @@ class two_terminals:
                     #print(con_high-con_low)
                     print("Diff div: ",(davg_current)/(dcon_current))
 
-                return [self._current_integral(self.coeff_con,transf(C)) - target, -(davg_current)/(dcon_current) - C]
-            res = fsolve(fixed_current_eq,[C_init, self.z], factor = 0.1, xtol = 1e-6)
+                return [self._current_integral(self.coeff_con,transf(C)) - target, comp - C]
+            res = fsolve(fixed_current_eq,[C_init, self.muR], factor = 0.1, xtol = 1e-6)
             # self.z = res[1]
             # self.update_occupf_L()
             # self.set_occup_roots()
