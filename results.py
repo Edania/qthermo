@@ -68,7 +68,7 @@ def check_avg_optimization(system:two_terminals, secondary = False):
     #max_cool, mc_transf = sys_copy.jRmax()
     target = 0.5*max_cool
     
-    res = sys_copy.optimize_for_avg(target, secondary = secondary)
+    res = sys_copy.optimize_for_avg(target, secondary = secondary, C_init = max_cool-target)
     transf_avg = sys_copy.transf #thermal_left._transmission_avg(0.1,thermal_left.coeff_con, thermal_left.coeff_avg)#
     #transf_avg = sys_copy._transmission_avg(1, sys_copy.coeff_con, sys_copy.coeff_avg)
     #thermal_left.transf = mc_transf
@@ -351,15 +351,15 @@ class PowerPlot:
 
 
 if __name__ == "__main__":
-    check_probe= True
-    check_avg = False
+    check_probe= False
+    check_avg = True
     check_noise = False
     check_product = False
     check_max = True
-    testing = False
+    testing = True
     midT = 1
     deltaT = 0.5
-    deltamu = -1.5
+    deltamu = 0
     muR = 0
     TR = midT-deltaT
     muL = muR + deltamu
@@ -399,10 +399,10 @@ if __name__ == "__main__":
         if check_probe:
             check_buttiker_probe(left_virtual)
             plt.show()
-        active_system = nonthermal_left
+        active_system = thermal_left
 
-        test_occup = lambda E,muL:thermal_with_lorentz(muL, TL, 0.1 ,-0.1, 1)(E)#lambda E, muL: two_terminals.fermi_dist(E,muL, TL)
-        #active_system.set_occupf_L(test_occup, -1)
+        test_occup = lambda E, muL: two_terminals.fermi_dist(E,muL, TL)#lambda E,muL:thermal_with_lorentz(muL, TL, 0.1 ,-0.1, 1)(E)
+        active_system.set_occupf_L(test_occup, -1)
         #active_system.E_low = -5
         #active_system.E_high = 5
         active_system.debug = True
@@ -420,7 +420,7 @@ if __name__ == "__main__":
             plt.hlines(0,Es[0], Es[-1])
             plt.legend()
             plt.show()
-            res = check_avg_optimization(active_system, False)
+            res = check_avg_optimization(active_system, True)
             print(res)
             #print("Efficiency old: ", active_system.get_efficiency())
             #active_system.z = res[1]
@@ -452,10 +452,10 @@ if __name__ == "__main__":
         filenames = ["data/th_"+dist_type+"_eff.npz","data/nth_"+dist_type+"_eff.npz","data/th_"+dist_type+"_noise.npz",
                      "data/nth_"+dist_type+"_noise.npz","data/th_"+dist_type+"_product.npz","data/nth_"+dist_type+"_product.npz"]
         if save_data:
-            # powerPlot.save_eff(thermal_left, powerPlot.targets_th, filenames[0])
-            # powerPlot.save_eff(nonthermal_left, powerPlot.targets_nth, filenames[1])
-            # powerPlot.save_noise(thermal_left, powerPlot.targets_th, filenames[2])
-            # powerPlot.save_noise(nonthermal_left, powerPlot.targets_nth, filenames[3])
+            powerPlot.save_eff(thermal_left, powerPlot.targets_th, filenames[0])
+            powerPlot.save_eff(nonthermal_left, powerPlot.targets_nth, filenames[1])
+            powerPlot.save_noise(thermal_left, powerPlot.targets_th, filenames[2])
+            powerPlot.save_noise(nonthermal_left, powerPlot.targets_nth, filenames[3])
             powerPlot.save_product(thermal_left, powerPlot.targets_th, filenames[4])
             powerPlot.save_product(nonthermal_left, powerPlot.targets_nth, filenames[5])
 
