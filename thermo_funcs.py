@@ -18,7 +18,7 @@ e = 1
 
 class two_terminals:
 
-    def __init__(self, E_low, E_high, transf = lambda E: 1, occupf_L = None, diff_occupf_L = None,occupf_R = None,  muL = 0, TL = 1, muR = 0, TR = 1,
+    def __init__(self, E_low, E_high, transf = lambda E: 1, occupf_L = None,occupf_R = None,  muL = 0, TL = 1, muR = 0, TR = 1,
                  coeff_avg = None, coeff_noise = None, coeff_con = None, N = 1, subdivide = False, debug = False):
         '''
         occupf_L, occupf_R, transf, coeff_avg, coeff_noise, and coeff_con must be functions of E, energy
@@ -40,7 +40,7 @@ class two_terminals:
             self.set_fermi_dist_left()
         else:
             self.set_occupf_L(occupf_L)
-        self.diff_occupf_L = diff_occupf_L
+
         
         if occupf_R == None:
             self.set_fermi_dist_right()
@@ -60,20 +60,7 @@ class two_terminals:
             self.coeff_noise = self.right_heat_coeff
         else:
             self.coeff_noise = coeff_noise
-
-
         self.set_occup_roots()
-        #print("Have you defined the coefficients to be positive?")
-    
-
-    # @property
-    # def muL(self):
-    #     return self._muL
-
-    # @muL.setter
-    # def value(self, mu):
-    #     self._value = mu
-    #     self.set_fermi_dist_left()
 
     def set_full_transmission(self):
         self.transf = lambda E: 1
@@ -87,8 +74,8 @@ class two_terminals:
     def set_transmission_noise_opt(self, C, coeff):
         self.transf = self._transmission_noise(C, coeff)
 
-    def set_transmission_avg_opt(self, C, coeff_in, coeff_out):
-        self.transf = self._transmission_avg(C, coeff_in, coeff_out)
+    def set_transmission_avg_opt(self, C, coeff_x, coeff_y):
+        self.transf = self._transmission_avg(C, coeff_x, coeff_y)
 
     def set_occupf_L(self, occupf_L, z = 0):
         if len(signature(occupf_L).parameters) == 2:
@@ -96,10 +83,10 @@ class two_terminals:
             self.wrapper_occupf_L = lambda E, z: occupf_L(E,z)
             self.occupf_L = lambda E: occupf_L(E,self.z)
         else:
+            self.wrapper_occupf_L = None
             self.occupf_L = occupf_L
 
-    def update_occupf_L(self):
-        
+    def update_occupf_L(self):      
         self.occupf_L = lambda E: self.wrapper_occupf_L(E, self.z)
 
     def entropy_coeff(E, occupf):
@@ -140,7 +127,7 @@ class two_terminals:
         return -E
     
     def left_noneq_free_coeff(self,E):
-        return E - self.TR*self.left_entropy_coeff(E)
+        return -E - self.TR*self.left_entropy_coeff(E)
 
     def calc_left_particle_current(self):
         return self._current_integral(self.left_particle_coeff)
@@ -172,10 +159,28 @@ class two_terminals:
     def get_efficiency(self):
         return self._current_integral(self.coeff_con)/self._current_integral(self.coeff_avg)
 
+    def dSL_dmuR(self, transf):
+        return lambda E: -self.coeff_avg(E)*transf(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
+                
+    
+    def dSR_dmuR(self, transf):
+        return lambda E: transf(E)*((self.occupf_L(E)- self.occupf_R(E))/self.TR - self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
 
     def find_occup_roots(self, step = 0.1, tol = 1e-3):
-        occupdiff = lambda E: self.occupf_L(E) - self.occupf_R(E)
-        roots = ut.root_finder(occupdiff, self.E_low, self.E_high, step, tol)
+        occupdiff = lambda E: (self.occupf_L(E) - self.occupf_R(E))
+        #roots = ut.root_finder(occupdiff, 3.4, 3.8, step, tol)
+        #Es = np.linspace(self.E_low, self.E_high, 1000)
+        Es = np.linspace(self.E_low, self.E_high, 1000)
+        signed = np.sign(occupdiff(Es))
+        #print(signed[1:] - signed[:-1])
+        roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0).flatten()]
+        # print(roots_init)
+        if  len(roots_init) == 0:
+            self.E_high += np.abs(self.E_high) if self.E_high != 0 else 1
+            self.E_low -= np.abs(self.E_low) if self.E_low != 0 else 1
+            print(self.E_low, self.E_high)
+            return self.find_occup_roots()
+        roots = ut.root_finder_guesses(occupdiff, roots_init,tol)
         return roots
     
     def set_occup_roots(self, step = 0.1, tol = 1e-3):
@@ -184,60 +189,42 @@ class two_terminals:
     # def find_constraint_roots(self, step = 0.1, tol = 1e-3):
         
         # return roots
-    def constrained_current_max(self, step = 0.1, tol = 1e-3):
+    def constrained_current_max(self, step = 0.1, tol = 1e-3, return_roots_con = False):
         func = lambda E:self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E))
-        roots = np.array(ut.root_finder(func, self.E_low, self.E_high, step, tol))
-        roots = np.sort(roots)
+        #occupdiff = lambda E: (self.occupf_L(E) - self.occupf_R(E))
+        #roots = ut.root_finder(occupdiff, 3.4, 3.8, step, tol)
+        #Es = np.linspace(self.E_low, self.E_high, 1000)
+        Es = np.linspace(self.E_low, self.E_high, 1000)
+        signed = np.sign(self.coeff_con(Es))
+        #print(signed[1:] - signed[:-1])
+        roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0)]
+        if len(roots_init) == 0:
+            self.E_high += np.abs(self.E_high) if self.E_high != 0 else 1
+            self.E_low -= np.abs(self.E_low) if self.E_low != 0 else 1
+            print(self.E_low, self.E_high)
+            return self.constrained_current_max()
+        roots_con = ut.root_finder_guesses(self.coeff_con, roots_init,tol)        
+        self.set_occup_roots()
+        roots = roots_con + self.occuproots
         # Assert that we truly only have roots
-        roots[func(roots) < 1e-6]
+#        roots[func(roots) < 1e-6]
         transf = lambda E: np.heaviside(func(E),0)
 
-        # h = 0.001
-        # first = func(roots[0]+ h) - func(roots[0] - h)
-        # if self.debug:
-        #     print("Roots: ", roots)
-        #     print("Changes: ", func(roots+ h) - func(roots - h))
-        # #print(first)
-        # transf_list = []
-        # if first > 0:
-        #     root_end = len(roots) - 1 if len(roots) % 2 == 0 else len(roots) - 2
-            
-        #     for i in range(0,root_end,2):
-        #         print(i) 
-        #         #root_one = copy.copy(roots[i])
-        #         #root_two = copy.copy(roots[i+1])
-        #         temp_transf = lambda E: np.heaviside(E - roots[i], 0)*np.heaviside(roots[i+1]-E, 0)
-        #         print(temp_transf(0.2))
-        #         transf_list.append(temp_transf)
-        #     if len(roots) % 2 != 0:
-                
-        #         transf_list.append(lambda E: np.heaviside(roots[-1] - E,0))
-        # else:
-        #     transf_list.append(lambda E: np.heaviside(E - roots[0], 0))
-        #     root_end = len(roots) - 1 if len(roots) % 2 != 0 else len(roots) - 2
-        #     for i in range(1,root_end,2): 
-        #         temp_transf = lambda E: np.heaviside(E - roots[i], 0)*np.heaviside(roots[i+1]-E, 0)
-        #         transf_list.append(temp_transf)
-        #     if len(roots) % 2 != 0:
-        #         transf_list.append(lambda E: np.heaviside(roots[-1] - E,0))
-        # print(transf_list[0](0.2), transf_list[1](0.2))
-        # transf = lambda E: sum([x(E) for x in transf_list])
-        
-        #if len(roots) % 2 == 0:
-        #print(transf(0.2))
         jmax = self._current_integral(self.coeff_con, transf)
         #print(transf(np.linspace(-0.5,1)))
+        if return_roots_con:
+            return jmax, transf, roots, roots_con    
         return jmax, transf, roots
 
     def adjust_limits(self):
         jmax, transf, roots = self.constrained_current_max()
         lowest = np.min(roots)
         highest = np.max(roots)
-        self.E_min = lowest - 0.5*lowest
-        self.E_max = highest + 0.5*highest
+        self.E_low = lowest - 0.5*np.abs(lowest)
+        self.E_high = highest + 0.5*np.abs(highest)
         if self.debug:
-            print(roots)
-            print("New limits: ",self.E_min, self.E_max)
+            print("Roots: ", roots)
+            print("New limits: ",self.E_low, self.E_high)
 
 
     #TODO: Fix subdivide. Just change E_low and E_high according to the limits of the cooling regime for now.
@@ -287,17 +274,33 @@ class two_terminals:
         current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points = self.occuproots, limit = 100)
         return current
     
+    def _avg_condition(self, C, coeff_x, coeff_y):
+        return lambda E: -(coeff_y(E) - C*coeff_x(E))*(self.occupf_L(E) - self.occupf_R(E))
+
     def _transmission_avg(self, C, coeff_x, coeff_y):
         x_integrands = lambda E: coeff_x(E)*(self.occupf_L(E)- self.occupf_R(E))
         y_integrands = lambda E: coeff_y(E)*(self.occupf_L(E)- self.occupf_R(E))
         #transf = lambda E: np.heaviside(coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E)*in_integrands(E), 0)+np.heaviside(-coeff_out(E)/coeff_in(E) - C, 0)*np.heaviside(out_integrands(E)*in_integrands(E), 0)
-        transf = lambda E: np.heaviside(-(coeff_y(E) - C*coeff_x(E))*(self.occupf_L(E) - self.occupf_R(E)), 0.5)#*np.heaviside(y_integrands(E),0.5)* np.heaviside(x_integrands(E), 0.5)
+        transf = lambda E: np.heaviside(self._avg_condition(C, coeff_x, coeff_y)(E), 0)#*np.heaviside(y_integrands(E),0.5)* np.heaviside(x_integrands(E), 0.5)
         #transf = lambda E: np.heaviside(coeff_x(E)/coeff_y(E) - C, 0.5)*np.heaviside(y_integrands(E),0.5)* np.heaviside(x_integrands(E), 0.5)
         # if self.debug:
         #     print("C",C)
             # print("Con current", self._current_integral(coeff_x,transf))
         return transf
-    def optimize_for_avg(self,target, C_init = None, fixed = "nominator", secondary = False):
+    def C_limit_avg(self,coeff_nom, coeff_denom,h = 0.001):
+        #jmax, transfmax, roots = self.constrained_current_max()
+        roots = self.occuproots
+        limit_list = []
+        for root in roots:
+            avg_high = lambda C: self._avg_condition(C,coeff_nom, coeff_denom)(root+h)
+            avg_low = lambda C: self._avg_condition(C, coeff_nom, coeff_denom)(root-h)
+            res = minimize(lambda C: np.abs(avg_high(C)-avg_low(C)),1)
+            limit_list.append(res.x)
+        if self.debug:
+            print("C limit: ", res.x)
+        limit = np.min(np.array(limit_list))
+        return limit
+    def optimize_for_avg(self,target, C_init = None, fixed = "nominator", secondary = False, secondary_prop = "muR"):
         '''
         Make sure coeffs are defined such that positive contributions to currents are desirable and negative suppressed
         '''
@@ -309,59 +312,84 @@ class two_terminals:
             coeff_denom = self.coeff_con
             coeff_nom = self.coeff_avg
             
-
+        def C_limiter(h = 0.001):
+            #jmax, transfmax, roots = self.constrained_current_max()
+            roots = self.occuproots
+            avg_high = lambda C: self._avg_condition(C,coeff_nom, coeff_denom)(roots[0]+h)
+            avg_low = lambda C: self._avg_condition(C, coeff_nom, coeff_denom)(roots[0]-h)
+            res = minimize(lambda C: np.abs(avg_high(C)-avg_low(C)),1)
+            if self.debug:
+                print("C limit: ", res.x)
+            return res.x
         transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
 
         if C_init == None:
-            temp_Es = np.linspace(self.E_low, self.E_high, 100)
-            x_integrands = lambda E: coeff_nom(E)*(self.occupf_L(E)- self.occupf_R(E))
-            y_integrands = lambda E: coeff_denom(E)*(self.occupf_L(E)- self.occupf_R(E))
-            func_C = coeff_nom(temp_Es)/coeff_denom(temp_Es)*np.heaviside(y_integrands(temp_Es),0.5)* np.heaviside(x_integrands(temp_Es), 0.5)
-            C_max = np.max(func_C)
-            C_init = 0.9*C_max
+            C_init = C_limiter()*10
+            # temp_Es = np.linspace(self.E_low, self.E_high, 100)
+            # x_integrands = lambda E: coeff_nom(E)*(self.occupf_L(E)- self.occupf_R(E))
+            # y_integrands = lambda E: coeff_denom(E)*(self.occupf_L(E)- self.occupf_R(E))
+            # func_C = coeff_nom(temp_Es)/coeff_denom(temp_Es)*np.heaviside(y_integrands(temp_Es),0.5)* np.heaviside(x_integrands(temp_Es), 0.5)
+            # C_max = np.max(func_C)
+            # C_init = 0.9*C_max
             
-            test_current = self._current_integral(self.coeff_con, transf(C_init))
-            # while(test_current == 0):
-            #     if self.debug:
-            #         print(("Entering while loop"))
-            #     C_init /= 2
-                # test_current = self._current_integral(self.coeff_con, transf(C_init))
-            if self.debug:
-                print("C_init: ", C_init)
+            # test_current = self._current_integral(self.coeff_con, transf(C_init))
+            # # while(test_current == 0):
+            # #     if self.debug:
+            # #         print(("Entering while loop"))
+            # #     C_init /= 2
+            #     # test_current = self._current_integral(self.coeff_con, transf(C_init))
+            # if self.debug:
+            #     print("C_init: ", C_init)
 
         if secondary:
-            def fixed_current_eq(thetas, h = 0.001):
+            if secondary_prop == "muR":
+                def updater(z):
+                    self.z = z
+                    self.muR = z
+                    self.set_fermi_dist_right()
+                    self.set_occup_roots()
+            elif secondary_prop == "TR":
+                def updater(z):
+                    self.z = z
+                    self.TR = z
+                    self.set_fermi_dist_right()
+                    self.set_occup_roots()
+            elif secondary_prop == "z":
+                assert(self.wrapper_occupf_L != None)
+                def updater(z):
+                    self.z = z
+                    self.update_occupf_L()
+                    self.set_occup_roots()
+            
+            def fixed_current_eq(thetas):
 
                 C = thetas[0]
                 z = thetas[1]
-                if C < 0.8:
+                #TODO: Better limits (when does the current go to zero?)
+                if C < C_limiter():
                     return [1000,1000]
 
-                self.muR = z
-                self.set_fermi_dist_right()
+                updater(z)
+
                 transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
-                # self.z = z
-                # self.update_occupf_L()
-                # self.set_occup_roots()
+
                 current = self._current_integral(self.coeff_con,transf(C))
-                print("Current: ", current)
-                print("C: ",C)
-                print("z: ",z)
+                if self.debug:
+                    print("Current: ", current)
+                    print("C: ",C)
+                    print("z: ",z)
                 #
                 if current == 0:
                      C = 2*C               
-                # davg_integrand = lambda E: self.coeff_avg(E)*self.transf(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
-                # dcon_integrand = lambda E: self.transf(E)*((self.occupf_L(E)- self.occupf_R(E))/self.TR - self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
+                current = self._current_integral(self.coeff_con,transf(C))
+                if self.debug:
+                    print("Current new: ", current)
 
-                # # davg_integrand = lambda E: self.N*1/h*self.coeff_avg(E)*transf(C)(E)*(self.occupf_R(E)**2 *(-np.exp((E-self.muR)/self.TR))/self.TR)
-                # # dcon_integrand = lambda E: self.N*1/h*transf(C)(E)*((self.occupf_L(E)- self.occupf_R(E)) + self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
-                # davg_current, err = integrate.quad(davg_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-                # dcon_current, err = integrate.quad(dcon_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-                davg_integrand = lambda E: self.coeff_avg(E)*transf(C)(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
+                davg_integrand = lambda E: -self.coeff_avg(E)*transf(C)(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
                 dcon_integrand = lambda E: transf(C)(E)*((self.occupf_L(E)- self.occupf_R(E))/self.TR - self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
                 davg_current, err = integrate.quad(davg_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
                 dcon_current, err = integrate.quad(dcon_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-                comp = -davg_current/dcon_current
+                comp = davg_current/dcon_current
                 # self.z = z + h
                 # self.update_occupf_L()
                 # self.set_occup_roots()
@@ -384,12 +412,9 @@ class two_terminals:
 
                 return [self._current_integral(self.coeff_con,transf(C)) - target, comp - C]
             res = fsolve(fixed_current_eq,[C_init, self.muR], factor = 0.1, xtol = 1e-6)
-            # self.z = res[1]
-            # self.update_occupf_L()
-            # self.set_occup_roots()
-            self.muR = res[1]
-            self.set_fermi_dist_right()
+            updater(res[1])
             self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
+            print(self._current_integral(self.coeff_con))
             return res
 
 
@@ -404,15 +429,84 @@ class two_terminals:
             self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
             return res[0]
 
-    
-    def _noise_condition(self):
+
+    def optimize_for_best_avg(self,C_init = 1, fixed = "nominator", secondary_prop = "muR", left_current = "entropy"):
+        if fixed == "nominator":
+            coeff_nom = self.coeff_con
+            coeff_denom = self.coeff_avg
+            
+        else:
+            coeff_denom = self.coeff_con
+            coeff_nom = self.coeff_avg
+
+        transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
+        
+        C_limit = self.C_limit_avg(coeff_nom, coeff_denom)
+
+        if secondary_prop == "muR":
+            if left_current == "entropy":
+                d_right = self.dSR_dmuR
+                d_left = self.dSL_dmuR
+            elif left_current == "free":
+                pass
+            else:
+                print("Invalid left current")
+                return -1
+
+        elif secondary_prop == "TR":
+            if left_current == "entropy":
+                pass
+            elif left_current == "free":
+                pass
+            else:
+                print("Invalid left current")
+                return -1
+        elif secondary_prop == "z":
+            if left_current == "entropy":
+                pass
+            elif left_current == "free":
+                pass
+            else:
+                print("Invalid left current")
+                return -1
+        else:
+            print("Invalid secondary prop")
+            return -1
+
+        def func(C):
+            if C < C_limit:
+                return 1000
+
+            dSL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            dSR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            if dSL_integ == 0.0 or dSR_integ == 0.0:
+                if self.debug:
+                    print("increasing C")
+                C *= 1.5
+                #C_zeros = 
+                dSL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+                dSR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            if self.debug:
+                print("dSL_integ: ", dSL_integ)
+                print("dSR_integ: ", dSR_integ)
+                print("d frac: ", dSL_integ/dSR_integ)
+                print("C: ", C)
+            return dSL_integ/dSR_integ - C
+        res = fsolve(func, C_init, factor = 0.1, xtol = 1e-6)
+        self.transf = transf(res[0])
+        dSL_integ, err = integrate.quad(d_left(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+        dSR_integ, err = integrate.quad(d_right(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+        print(res[0]- dSL_integ/dSR_integ)
+        return res[0]
+
+    def _noise_condition(self,C):
         div = lambda E: self.coeff_noise(E)**2*(self.occupf_L(E) *(1-self.occupf_L(E)) + self.occupf_R(E)*(1-self.occupf_R(E)))
-        return lambda E: self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E))/div(E)
+        return lambda E: C*self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)) - div(E)
 
     def _transmission_noise(self, C):
-        integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
-        comp = self._noise_condition()
-        transf = lambda E: np.heaviside(comp(E) - C, 0)*np.heaviside(integrands(E), 0) \
+        #integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+        comp = self._noise_condition(C)
+        transf = lambda E: np.heaviside(comp(E), 0)#*np.heaviside(integrands(E), 0) \
                 #+np.heaviside(- (comp - C), 0)*np.heaviside(-integrands, 0)
         if self.debug:
             print("C",C)       
@@ -420,27 +514,41 @@ class two_terminals:
         
         return transf
 
+    def C_limit_noise(self, h = 0.001):
+        _,_,_,roots = self.constrained_current_max(return_roots_con=True)
+        limit_list = []
+        for root in roots:
+            avg_high = lambda C: self._noise_condition(C)(root+h)
+            avg_low = lambda C: self._noise_condition(C)(root-h)
+            res = minimize(lambda C: np.abs(avg_high(C)-avg_low(C)),1)
+            limit_list.append(res.x)
+        if self.debug:
+            print("Roots: ", roots)
+            print("C limit: ", res.x)
+        limit = np.min(np.array(limit_list))
+        return limit        
+
     def optimize_for_noise(self, target, C_init = None, secondary = False):
         
         transf = lambda C: self._transmission_noise(C)
-        if C_init == None:
-            temp_Es = np.linspace(self.E_low, self.E_high, 100)
-            con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
-            func_C = self._noise_condition()(temp_Es)*np.heaviside(con_integrands(temp_Es),0)
-            func_C = func_C[~np.isnan(func_C)]
-            C_max = np.max(func_C)
-            C_init = 0.9*C_max
-            if self.debug:
-                print("C_init: ", C_init)
+        # if C_init == None:
+        #     temp_Es = np.linspace(self.E_low, self.E_high, 100)
+        #     con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+        #     func_C = self._noise_condition()(temp_Es)*np.heaviside(con_integrands(temp_Es),0)
+        #     func_C = func_C[~np.isnan(func_C)]
+        #     C_max = np.max(func_C)
+        #     C_init = 0.9*C_max
+        #     if self.debug:
+        #         print("C_init: ", C_init)
 
-            test_current = self._current_integral(self.coeff_con, transf(C_init))
-            while(test_current == 0):
-                if self.debug:
-                    print(("Entering while loop"))
-                C_init /= 2
-                test_current = self._current_integral(self.coeff_con, transf(C_init))
-            if self.debug:
-                print("C_init: ", C_init)
+        #     test_current = self._current_integral(self.coeff_con, transf(C_init))
+        #     while(test_current == 0):
+        #         if self.debug:
+        #             print(("Entering while loop"))
+        #         C_init /= 2
+        #         test_current = self._current_integral(self.coeff_con, transf(C_init))
+        #     if self.debug:
+        #         print("C_init: ", C_init)
         
         fixed_current_eq = lambda C: self._current_integral(self.coeff_noise, transf(C)) - target
         res = fsolve(fixed_current_eq,C_init, factor = 0.1, xtol=1e-6)
@@ -449,19 +557,22 @@ class two_terminals:
 
 
     def _product_condition(self,thetas):
+        con_avg = thetas[0]
+        con_noise = thetas[1]
+        C = thetas[2]
         div = lambda E: self.coeff_con(E)*(self.occupf_L(E)-self.occupf_R(E))
-        term_one = lambda E: -thetas[0]*self.coeff_noise(E)**2*(self.occupf_L(E)*(1-self.occupf_L(E))+self.occupf_R(E)*(1-self.occupf_R(E)))#/div(E)
-        term_two = lambda E: -thetas[1]*self.coeff_avg(E)*(self.occupf_L(E)-self.occupf_R(E))#/div(E)
-        term_three = lambda E: thetas[2]*div(E)
+        term_one = lambda E: -con_avg*self.coeff_noise(E)**2*(self.occupf_L(E)*(1-self.occupf_L(E))+self.occupf_R(E)*(1-self.occupf_R(E)))#/div(E)
+        term_two = lambda E: -con_noise*self.coeff_avg(E)*(self.occupf_L(E)-self.occupf_R(E))#/div(E)
+        term_three = lambda E: C*div(E)
         opt_func = lambda E: term_one(E)+term_two(E)+term_three(E)
         return opt_func
 
     def _transmission_product(self,thetas):
-        con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
-        avg_integrands = lambda E: self.coeff_avg(E)*(self.occupf_L(E)- self.occupf_R(E))
+        # con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
+        # avg_integrands = lambda E: self.coeff_avg(E)*(self.occupf_L(E)- self.occupf_R(E))
             
         #print(-thetas[0]*thetas[1] + max_prod)
-        transf = lambda E: np.heaviside(self._product_condition(thetas)(E), 0)*np.heaviside(avg_integrands(E),0)*np.heaviside(con_integrands(E),0)
+        transf = lambda E: np.heaviside(self._product_condition(thetas)(E), 0)#*np.heaviside(avg_integrands(E),0)*np.heaviside(con_integrands(E),0)
         return transf
         
     def optimize_for_product(self, target, thetas_init = None, alpha = 0.5, secondary = False):
@@ -511,6 +622,28 @@ class two_terminals:
         
         res = fsolve(opt_func, thetas_init, factor=1, xtol=1e-6)
         self.transf = self._transmission_product(res)
+        return res
+
+    def calc_for_product_determined(self, C):
+        max_transf = lambda E: np.heaviside(self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
+        self.transf = max_transf
+        max_noise = self.noise_cont(self.coeff_noise)
+        max_avg = self._current_integral(self.coeff_avg)       
+        
+        def opt_func(thetas):
+            con_noise = thetas[0]
+            con_avg = thetas[1]
+            if any(thetas < 0):
+                return 1000,1000
+            transf = self._transmission_product([con_avg, con_noise, C])
+            nois = self.noise_cont(self.coeff_noise, transf)
+            avg = self._current_integral(self.coeff_avg, transf)
+            con = self._current_integral(self.coeff_con, transf)
+            if self.debug: 
+                print("Thetas: ", thetas)
+                print("opt func: ", avg - con_avg, nois - con_noise)
+            return avg - con_avg, nois - con_noise
+        res = fsolve(opt_func, [max_avg, max_noise], factor = 0.1)
         return res
 
     def carnot(self):

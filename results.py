@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import copy
 
 from thermo_funcs import two_terminals
-from scipy.optimize import fsolve
+from scipy.optimize import fsolve, minimize
 from scipy import integrate
 
 def thermal_with_lorentz(mu, T, width, height, position):
@@ -63,11 +63,11 @@ def check_buttiker_probe(system):
     plt.legend()
     #plt.show()
 
-def check_avg_optimization(system:two_terminals, secondary = False, C_init = None):
+def check_avg_optimization(system:two_terminals, secondary = False, C_init = None, target = 0.1):
     sys_copy = copy.deepcopy(system)
     max_cool, mc_transf, roots = sys_copy.constrained_current_max()
     #max_cool, mc_transf = sys_copy.jRmax()
-    target = 0.2#0.5*max_cool
+    #target = 0.2#0.5*max_cool
     
     res = sys_copy.optimize_for_avg(target, secondary = secondary, C_init = C_init)
     transf_avg = sys_copy.transf #thermal_left._transmission_avg(0.1,thermal_left.coeff_con, thermal_left.coeff_avg)#
@@ -137,11 +137,11 @@ def plot_max(system:two_terminals):
     sys_copy = copy.deepcopy(system)
     max_cool, mc_transf, roots = sys_copy.constrained_current_max()
     print("Max cool: ", max_cool)
-    print(sys_copy.muR)
+    
     plt.plot(Es, sys_copy.occupf_L(Es), label = "fL", zorder = 2)
     plt.plot(Es, sys_copy.occupf_R(Es), label = "fR", zorder = 1)
     plt.plot(Es, mc_transf(Es), label = "mc transf" ,zorder = 3)
-
+    #plt.plot(Es, sys_copy.occupf_L(Es)-sys_copy.occupf_R(Es), label = "occupdiff")
 def check_Jrmax(system:two_terminals):
     sys_copy = copy.deepcopy(system)
     
@@ -158,6 +158,7 @@ def check_Jrmax(system:two_terminals):
     plt.plot(Es, transf_max(Es))
     plt.plot(Es, sys_copy.occupf_L(Es))
     plt.plot(Es, sys_copy.occupf_R(Es))
+    
     plt.show()
 
 class PowerPlot:
@@ -239,19 +240,26 @@ class PowerPlot:
         axs.set_xlabel("J_R")
         axs.set_ylabel(r"$S/ \eta$")
 
-    def produce_eff_data(self, system, targets):
+    def produce_eff_data(self, system:two_terminals, targets):
         if self.verbose:
             print("Producing eff data")
         JR_list = []
         avg_list = []
-        C_list = []
-        for target in targets:
-            if self.verbose:
-                print("On target ", target)
-            C = system.optimize_for_avg(target)
-            C_list.append(C)
+        C_limit = system.C_limit_avg(system.coeff_con, system.coeff_con)
+        C_list = np.linspace(C_limit, 2, 10)
+        for C in C_list:
+            system.set_transmission_avg_opt(C, system.coeff_con, system.coeff_avg)
             JR_list.append(system._current_integral(system.coeff_con))
             avg_list.append(system._current_integral(system.coeff_avg))
+            
+        # C_list = []
+        # for target in targets:
+        #     if self.verbose:
+        #         print("On target ", target)
+        #     C = system.optimize_for_avg(target)
+        #     C_list.append(C)
+        #     JR_list.append(system._current_integral(system.coeff_con))
+        #     avg_list.append(system._current_integral(system.coeff_avg))
         JR_arr = np.array(JR_list)
         avg_arr = np.array(avg_list)
         C_arr = np.array(C_list)
@@ -356,111 +364,186 @@ class PowerPlot:
 
 if __name__ == "__main__":
     check_probe= False
-    check_avg = True
+    check_avg = False
     check_noise = False
     check_product = False
     check_max = True
+    check_cond = True
     testing = True
     midT = 1
     deltaT = 0.5
     deltamu = 0
-    muR = 2
+    muR = 1.5
     TR = midT-deltaT
     muL = 0#muR + deltamu
     TL = midT + deltaT
 
-    E_low = -1
-    E_high = 10
+    E_low = -5
+    E_high = 5
     Es = np.linspace(E_low, E_high,1000)
 
-    # occupf_L_nth = thermal_with_lorentz(muL, TL, 0.1 ,0.3, 1)
-    occupf_L_nth = two_thermals(muL, TL, muR, TR)
-
+    occupf_L_nth = thermal_with_lorentz(muL, TL, 0.1 ,0.3, 1)
+    dist_params = np.array([muL, TL, 0.1 ,0.3, 1])
+    # occupf_L_nth = two_thermals(muL, TL, muR, TR)
+    #dist_params = np.array([muL,TL,muR,TR])
 
 
     left_virtual = two_terminals(-20, 20, occupf_L = occupf_L_nth, muL=muL, muR=muR, TL=TL, TR=TR)
-    if testing:
-        if check_probe:
-            check_buttiker_probe(left_virtual)
-            plt.show()
+
+    if check_probe:
+        check_buttiker_probe(left_virtual)
+        plt.show()
     buttiker_probe(left_virtual)
 
-    thermal_left = two_terminals(E_low, E_high, muL=left_virtual.muR, TL = left_virtual.TR, muR = muR, TR = TR, N = 1, subdivide=False, debug=True)
+    thermal_left = two_terminals(E_low, E_high, muL=left_virtual.muR, TL = left_virtual.TR, muR = muR, TR = TR, N = 1, subdivide=False, debug=False)
     nonthermal_left = two_terminals(E_low, E_high, occupf_L= occupf_L_nth, muL=muL, TL = TL, muR = muR, TR = TR, N = 1, subdivide=False, debug = False)
 
     thermal_left.coeff_con = lambda E: -thermal_left.right_entropy_coeff(E)
-    thermal_left.coeff_avg = lambda E: thermal_left.left_entropy_coeff(E)#thermal_left.left_noneq_free_coeff(E)
+    thermal_left.coeff_avg = lambda E: thermal_left.left_entropy_coeff(E)#thermal_left.left_noneq_free_coeff(E)#
     thermal_left.coeff_noise = lambda E: -thermal_left.right_entropy_coeff(E)
 
     nonthermal_left.coeff_con = lambda E: -nonthermal_left.right_entropy_coeff(E)
-    nonthermal_left.coeff_avg = lambda E: nonthermal_left.left_entropy_coeff(E)#thermal_left.left_noneq_free_coeff(E)
+    nonthermal_left.coeff_avg = lambda E: nonthermal_left.left_entropy_coeff(E)#nonthermal_left.left_noneq_free_coeff(E)#
     nonthermal_left.coeff_noise = lambda E: -nonthermal_left.right_entropy_coeff(E)
 
-    #thermal_left.adjust_limits()
-    #nonthermal_left.adjust_limits()
+    #TODO: fix
+    thermal_left.adjust_limits()
+    nonthermal_left.adjust_limits()
 
     if testing:
         if check_probe:
             check_buttiker_probe(left_virtual)
             plt.show()
-        active_system = thermal_left
-
-        test_occup = lambda E, muL: two_terminals.fermi_dist(E,muL, TL)#lambda E,muL:thermal_with_lorentz(muL, TL, 0.1 ,-0.1, 1)(E)
-        #active_system.set_occupf_L(test_occup, -2)
-        #active_system.E_low = -5
-        #active_system.E_high = 5
+        active_system = nonthermal_left
         active_system.debug = True
-        #active_system.adjust_limits()
-        # if check_max:
-        #     check_Jrmax(active_system)
+        active_system.muR = 1
+        active_system.set_fermi_dist_right()
+        # print(active_system.E_low)
+        # print(active_system.E_high)
+        active_system.set_occup_roots()
+        # print(active_system.occuproots)
+        # print(active_system.constrained_current_max())
+        active_system.adjust_limits()
+        Es = np.linspace(active_system.E_low, active_system.E_high,1000)
+        
+        plt.plot(Es,active_system.coeff_con(Es)*(active_system.occupf_L(Es) - active_system.occupf_R(Es)), label = "con")
+        plt.plot(Es,active_system.coeff_avg(Es)*(active_system.occupf_L(Es) - active_system.occupf_R(Es)), label = "avg")
+        plt.plot(Es, active_system.left_entropy_coeff(Es)*(active_system.occupf_L(Es) - active_system.occupf_R(Es)), label = "L entropy")
+        plt.plot(Es, active_system.left_energy_coeff(Es)*(active_system.occupf_L(Es) - active_system.occupf_R(Es)), label = "L energy")
+        plt.hlines(0,Es[0],Es[-1], colors="red")
+        plt.legend()
+        plt.show()
+        if check_cond:
+            Cs = np.linspace(-10,10,10)
+            #Cs = [0.1]
+            for C in Cs:
+                #[con_avg, con_noise] = active_system.calc_for_product_determined(C)
+                #cond = active_system._product_condition([con_avg, con_noise, C])
+                cond = active_system._avg_condition(C, active_system.coeff_con, active_system.coeff_avg)
+                plt.plot(Es, cond(Es), label = C)
+            
+            C_limit = active_system.C_limit_noise()
+            print("C limit: ", C_limit)
+            # def C_limiter(h = 0.001):
+            #     #jmax, transfmax, roots = self.constrained_current_max()
+            #     roots = active_system.occuproots
+            #     print(roots)
+            #     for root in roots:
+            #         avg_high = lambda C: active_system._noise_condition(C)(root+h)
+            #         avg_low = lambda C: active_system._noise_condition(C)(root-h)
+            #         res = minimize(lambda C: np.abs(avg_high(C)-avg_low(C)),1)
+            #         print("C limit: ", res.x)
+            #     return res.x
+            # C_limiter()
+            #plt.plot(Es,-active_system.coeff_avg(Es) + 10*active_system.coeff_con(Es), label = "coeff con")
+            #plt.plot(Es,active_system.coeff_avg(Es), label = "coeff avg")
+            plt.hlines(0,Es[0],Es[-1], colors="red")
+            plt.legend()
             #plt.show()
 
+
         if check_avg:
-            active_system.muR = 4.3
-            active_system.set_fermi_dist_right()
+            plot_mus = True
+            # active_system.muR = 1
+            # active_system.set_fermi_dist_right()
 
            #C = 10
             #plt.plot(Es,active_system.coeff_con(Es)/active_system.coeff_avg(Es) - 0.1, label = "Comp")
-            plt.plot(Es,active_system.coeff_con(Es)*(active_system.occupf_L(Es)- active_system.occupf_R(Es)), label = "con")
-            #plt.plot(Es,thermal_left.right_heat_coeff(Es)/thermal_left.TR*(thermal_left.occupf_L(Es)- thermal_left.occupf_R(Es)), label = "con 2")
-            #plt.plot(Es,thermal_left.left_heat_coeff(Es)/thermal_left.TL*(thermal_left.occupf_L(Es)- thermal_left.occupf_R(Es)), label = "avg")
-            plt.plot(Es,active_system.coeff_avg(Es)*(active_system.occupf_L(Es)- active_system.occupf_R(Es)), label = "avg")
-            plt.plot(Es, np.heaviside(-(active_system.coeff_avg(Es) - 0.9*active_system.coeff_con(Es))*(active_system.occupf_L(Es) - active_system.occupf_R(Es)),0))#*np.heaviside(active_system.coeff_con(Es)*(active_system.occupf_L(Es) - active_system.occupf_R(Es)),0))
-            plt.hlines(0,Es[0], Es[-1])
-            plt.legend()
-            plt.show()
-            res = check_avg_optimization(active_system, True,1.85)
-            active_system.muR = res[1]
-            active_system.set_fermi_dist_right()
-            #C = res[0]            
-            # C_list = []
-            # Iy_list = []
-            # dd_list = []
-            # mus = np.linspace(3,5,20)
-            # for mu in mus:
-            #     active_system.muR = mu
-            #     active_system.set_fermi_dist_right()
-                
-            #     #plt.show()
-            #     active_system.adjust_limits()
-            #     #print(active_system.E_high)
-            #     C = active_system.optimize_for_avg(0.1, 10)
-            #     res = check_avg_optimization(active_system, False,10)
-            #     plt.show()
-            #     Iy = active_system._current_integral(active_system.coeff_avg)
-            #     davg_integrand = lambda E: active_system.coeff_avg(E)*active_system.transf(E)*(active_system.occupf_R(E)**2 *(np.exp((E-active_system.muR)/active_system.TR))/active_system.TR)
-            #     dcon_integrand = lambda E: active_system.transf(E)*((active_system.occupf_L(E)- active_system.occupf_R(E))/TR - active_system.coeff_con(E)*(active_system.occupf_R(E)**2 *(np.exp((E-active_system.muR)/active_system.TR))/active_system.TR))
-            #     davg_current, err = integrate.quad(davg_integrand, active_system.E_low, active_system.E_high, args=(), points=active_system.occuproots, limit = 100)
-            #     dcon_current, err = integrate.quad(dcon_integrand, active_system.E_low, active_system.E_high, args=(), points=active_system.occuproots, limit = 100)
-            #     dd_list.append(-davg_current/dcon_current if dcon_current != 0 else 0)
-            #     C_list.append(C)
-            #     Iy_list.append(Iy)
-            # plt.plot(mus, 0.1/np.array(Iy_list))
-            # plt.vlines(mus[np.argmax(0.1/np.array(Iy_list))], 0, 1)
-            # #plt.show()
-            # plt.plot(mus,np.array(C_list)-1)
-            # plt.plot(mus, np.array(dd_list)-1)
+            # plt.plot(Es,active_system.coeff_con(Es)*(active_system.occupf_L(Es)- active_system.occupf_R(Es)), label = "con")
+            # #plt.plot(Es,thermal_left.right_heat_coeff(Es)/thermal_left.TR*(thermal_left.occupf_L(Es)- thermal_left.occupf_R(Es)), label = "con 2")
+            # #plt.plot(Es,thermal_left.left_heat_coeff(Es)/thermal_left.TL*(thermal_left.occupf_L(Es)- thermal_left.occupf_R(Es)), label = "avg")
+            # plt.plot(Es,active_system.coeff_avg(Es)*(active_system.occupf_L(Es)- active_system.occupf_R(Es)), label = "avg")
+            # plt.plot(Es, np.heaviside(-(active_system.coeff_avg(Es) - 0.9*active_system.coeff_con(Es))*(active_system.occupf_L(Es) - active_system.occupf_R(Es)),0))#*np.heaviside(active_system.coeff_con(Es)*(active_system.occupf_L(Es) - active_system.occupf_R(Es)),0))
+            # plt.hlines(0,Es[0], Es[-1])
+            # plt.legend()
             # plt.show()
+            # res = check_avg_optimization(active_system, False,1.85,0.1)
+            # plt.show()
+            # res = active_system.optimize_for_best_avg(10)
+            # print("Con current: ", active_system._current_integral(active_system.coeff_con))
+            # print("Efficiency: ", active_system._current_integral(active_system.coeff_con)/active_system._current_integral(active_system.coeff_avg))
+            # C = res[0] 
+            # active_system.muR = res[1]
+            # active_system.set_fermi_dist_right()
+            # print(active_system._current_integral(active_system.coeff_avg, active_system._transmission_avg(C, active_system.coeff_con, active_system.coeff_avg, active_system.occupf_L, active_system.occupf_R)))
+            # print(active_system._current_integral(active_system.coeff_con, active_system._transmission_avg(C, active_system.coeff_con, active_system.coeff_avg, active_system.occupf_L, active_system.occupf_R)))
+            if plot_mus:
+                        
+                C_list = []
+                Iy_list = []
+                Ix_list = []
+                dd_list = []
+                mus = np.linspace(-0.1,-5,20)
+                active_system.E_high = 2
+                active_system.E_low = -2
+                for mu in mus:
+                    active_system.muR = mu
+                    active_system.set_fermi_dist_right()
+                    
+                    #plt.show()
+                    Es = np.linspace(-2,4)
+                    active_system.adjust_limits()
+                    print(active_system.occuproots)
+                    #plt.plot(Es,active_system.occupf_L(Es))
+                    #plt.plot(Es,active_system.occupf_R(Es))
+                    #plt.plot(Es, active_system._transmission_avg(1.66, active_system.coeff_con, active_system.coeff_avg, active_system.occupf_L, active_system.occupf_R)(Es))
+                    #plt.show()
+                    #print(active_system.E_high)
+                    #C = active_system.optimize_for_avg(0.1, 10)
+                    C = active_system.optimize_for_best_avg(10)
+                    #res = check_avg_optimization(active_system, False,10)
+                    #plt.show()
+                    Ix = active_system._current_integral(active_system.coeff_con)
+                    Iy = active_system._current_integral(active_system.coeff_avg)
+                    # davg_integrand = lambda E: -active_system.coeff_avg(E)*active_system.transf(E)*(active_system.occupf_R(E)**2 *(np.exp((E-active_system.muR)/active_system.TR))/active_system.TR)
+                    # dcon_integrand = lambda E: active_system.transf(E)*((active_system.occupf_L(E)- active_system.occupf_R(E))/TR - active_system.coeff_con(E)*(active_system.occupf_R(E)**2 *(np.exp((E-active_system.muR)/active_system.TR))/active_system.TR))
+                    # davg_current, err = integrate.quad(davg_integrand, active_system.E_low, active_system.E_high, args=(), points=active_system.occuproots, limit = 100)
+                    # dcon_current, err = integrate.quad(dcon_integrand, active_system.E_low, active_system.E_high, args=(), points=active_system.occuproots, limit = 100)
+                    # dd_list.append(davg_current/dcon_current if dcon_current != 0 else 0)
+                    C_list.append(C)
+                    Iy_list.append(Iy)
+                    Ix_list.append(Ix)
+                C_list = np.array(C_list)
+                Ix_list = np.array(Ix_list)
+                Iy_list = np.array(Iy_list)
+                eff_list = Ix_list/Iy_list
+                plt.plot(mus, eff_list)
+                #plt.vlines(mus[np.argmax(0.1/np.array(Iy_list))], 0, 1)
+                #plt.show()
+                #plt.plot(mus,np.array(C_list)-1)
+                #plt.plot(mus, np.array(dd_list)-1)
+                plt.show()
+
+                plt.plot(Ix_list, eff_list)
+                plt.show()
+                # C = C_list[np.argmax(0.1/np.array(Iy_list))]
+                # active_system.muR = mus[np.argmax(0.1/np.array(Iy_list))]
+                # active_system.set_fermi_dist_right()            
+                # print(active_system._current_integral(active_system.coeff_avg, active_system._transmission_avg(C, active_system.coeff_con, active_system.coeff_avg, active_system.occupf_L, active_system.occupf_R)))
+                # print(active_system._current_integral(active_system.coeff_con, active_system._transmission_avg(C, active_system.coeff_con, active_system.coeff_avg, active_system.occupf_L, active_system.occupf_R)))
+
+            
+
 
             #print(res)#print("Efficiency old: ", active_system.get_efficiency())
             #active_system.z = res[1]
@@ -479,11 +562,6 @@ if __name__ == "__main__":
             plt.show()
             check_product_optimization(active_system)
         
-        #thermal_left = two_terminals(E_low, E_high, muL=muL, TL =TL, muR = muR, TR = TR, N = 1)
-        
-        #if check_avg:
-        #    check_avg_optimization(nonthermal_left)
-        
         if any([check_avg, check_noise, check_product, check_max]):
             plot_max(active_system)
             
@@ -492,30 +570,31 @@ if __name__ == "__main__":
             plt.show()
 
     else:
-        #TODO: check all the convergences!
-        powerPlot = PowerPlot(thermal_left, nonthermal_left, True, n_targets=20)
-        
         save_data = True
-        dist_type = "two_thermals"
+        dist_type = "lorentz_peak_ez"
         filenames = ["data/th_"+dist_type+"_eff.npz","data/nth_"+dist_type+"_eff.npz","data/th_"+dist_type+"_noise.npz",
                      "data/nth_"+dist_type+"_noise.npz","data/th_"+dist_type+"_product.npz","data/nth_"+dist_type+"_product.npz"]
         if save_data:
-            # powerPlot.save_eff(thermal_left, powerPlot.targets_th, filenames[0])
-            # powerPlot.save_eff(nonthermal_left, powerPlot.targets_nth, filenames[1])
+            powerPlot = PowerPlot(thermal_left, nonthermal_left, True, n_targets=20)
+            np.savez("data/th_params_"+dist_type, dist_params)
+            np.savez("data/nth_params_"+dist_type, dist_params)
+            powerPlot.save_eff(thermal_left, powerPlot.targets_th, filenames[0])
+            powerPlot.save_eff(nonthermal_left, powerPlot.targets_nth, filenames[1])
             # powerPlot.save_noise(thermal_left, powerPlot.targets_th, filenames[2])
-            # powerPlot.save_noise(nonthermal_left, powerPlot.targets_nth, filenames[3])
-            
-            powerPlot.save_product(thermal_left, powerPlot.targets_th, filenames[4])
-            powerPlot.save_product(nonthermal_left, powerPlot.targets_nth, filenames[5])
+            # powerPlot.save_noise(nonthermal_left, powerPlot.targets_nth, filenames[3])            
+            # powerPlot.save_product(thermal_left, powerPlot.targets_th, filenames[4])
+            # powerPlot.save_product(nonthermal_left, powerPlot.targets_nth, filenames[5])
+        else:
+            np.load()
 
-        fig = powerPlot.make_figure(make_eff=True, make_noise=True, make_product=True, filenames=filenames)
+        fig = powerPlot.make_figure(make_eff=True, make_noise=False, make_product=False, filenames=filenames)
         plt.suptitle("Optimized plots for " + dist_type + r", metric $\dot S_R/\dot S_L$")
         plt.tight_layout()
         plt.savefig("figs/"+dist_type+".png")
 
-        fig = plt.figure()
-        JR_arr, noise_arr, C_arr =powerPlot.get_product_data(filename=filenames[4])
-        plt.plot(powerPlot.targets_nth-JR_arr)
-        plt.show()
+        # fig = plt.figure()
+        # JR_arr, noise_arr, C_arr =powerPlot.get_product_data(filename=filenames[4])
+        # plt.plot(powerPlot.targets_nth-JR_arr)
+        # plt.show()
         fig = powerPlot.make_dist_figure()
         plt.savefig("figs/"+dist_type+"_dist.png")
