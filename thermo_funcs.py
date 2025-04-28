@@ -71,11 +71,15 @@ class two_terminals:
     def set_fermi_dist_right(self):
         self.occupf_R = lambda E: two_terminals.fermi_dist(E, self.muR, self.TR)
 
-    def set_transmission_noise_opt(self, C, coeff):
-        self.transf = self._transmission_noise(C, coeff)
+    def set_transmission_noise_opt(self, C):
+        self.transf = self._transmission_noise(C)
 
     def set_transmission_avg_opt(self, C, coeff_x, coeff_y):
         self.transf = self._transmission_avg(C, coeff_x, coeff_y)
+
+    def set_transmission_product_opt(self, C, alpha = 0.5):
+        calc_avg, calc_noise = self.calc_for_product_determined(C,alpha)
+        self.transf = self._transmission_product([calc_avg,calc_noise, C], alpha)
 
     def set_occupf_L(self, occupf_L, z = 0):
         if len(signature(occupf_L).parameters) == 2:
@@ -89,82 +93,20 @@ class two_terminals:
     def update_occupf_L(self):      
         self.occupf_L = lambda E: self.wrapper_occupf_L(E, self.z)
 
-    def entropy_coeff(E, occupf):
-        coeff = kb*np.log(occupf(E)/(1-occupf(E)))
-        return coeff
-
-    def left_entropy_coeff(self,E):
-        return two_terminals.entropy_coeff(E, self.occupf_L)
-
-    def right_entropy_coeff(self,E):
-        return  -two_terminals.entropy_coeff(E, self.occupf_R)
-
-    def left_heat_coeff(self,E):
-        return E-self.muL
-
-    def right_heat_coeff(self,E):
-        return -E+self.muR
-
-    def left_particle_coeff(self,E):
-        return 1
-
-    def right_particle_coeff(self,E):
-        return -1
-
-    def left_electric_coeff(self,E):
-        return self.muL
-
-    def right_electric_coeff(self,E):
-        return -self.muR
-    
-    def power_coeff(self,E):
-        return (self.muR-self.muL)
-
-    def left_energy_coeff(self,E):
-        return E
-
-    def right_energy_coeff(self, E):
-        return -E
-    
-    def left_noneq_free_coeff(self,E):
-        return -E - self.TR*self.left_entropy_coeff(E)
-
-    def calc_left_particle_current(self):
-        return self._current_integral(self.left_particle_coeff)
-
-    def calc_right_particle_current(self):
-        return self._current_integral(self.right_particle_coeff)
-
-    def calc_left_energy_current(self):
-        return self._current_integral(self.left_energy_coeff)
-
-    def calc_right_energy_current(self):
-        return self._current_integral(self.right_energy_coeff)
-    
-    def calc_left_heat_current(self):
-        return self._current_integral(self.left_heat_coeff)
-    
-    def calc_right_heat_current(self):
-        return self._current_integral(self.right_heat_coeff)
-    
-    def calc_left_entropy_current(self):
-        return self._current_integral(self.left_entropy_coeff)
-    
-    def calc_right_entropy_current(self):
-        return self._current_integral(self.right_entropy_coeff)
-    
-    def calc_right_entropy_current(self):
-        return self._current_integral(self.left_noneq_free_coeff)
-    
     def get_efficiency(self):
         return self._current_integral(self.coeff_con)/self._current_integral(self.coeff_avg)
 
     def dSL_dmuR(self, transf):
         return lambda E: -self.coeff_avg(E)*transf(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
                 
-    
+    def dFL_dmuR(self,transf):
+        return lambda E: -self.coeff_avg(E)*transf(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
+
     def dSR_dmuR(self, transf):
         return lambda E: transf(E)*((self.occupf_L(E)- self.occupf_R(E))/self.TR - self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
+
+
+
 
     def find_occup_roots(self, step = 0.1, tol = 1e-3):
         occupdiff = lambda E: (self.occupf_L(E) - self.occupf_R(E))
@@ -442,13 +384,13 @@ class two_terminals:
         transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
         
         C_limit = self.C_limit_avg(coeff_nom, coeff_denom)
-
         if secondary_prop == "muR":
             if left_current == "entropy":
                 d_right = self.dSR_dmuR
                 d_left = self.dSL_dmuR
             elif left_current == "free":
-                pass
+                d_right = self.dSR_dmuR
+                d_left = self.dFL_dmuR
             else:
                 print("Invalid left current")
                 return -1
@@ -472,31 +414,32 @@ class two_terminals:
         else:
             print("Invalid secondary prop")
             return -1
+    
 
         def func(C):
             if C < C_limit:
                 return 1000
 
-            dSL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-            dSR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-            if dSL_integ == 0.0 or dSR_integ == 0.0:
+            dL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            dR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            if dL_integ == 0.0 or dR_integ == 0.0:
                 if self.debug:
                     print("increasing C")
                 C *= 1.5
                 #C_zeros = 
-                dSL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-                dSR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+                dL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+                dR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
             if self.debug:
-                print("dSL_integ: ", dSL_integ)
-                print("dSR_integ: ", dSR_integ)
-                print("d frac: ", dSL_integ/dSR_integ)
+                print("dL_integ: ", dL_integ)
+                print("dR_integ: ", dR_integ)
+                print("d frac: ", dL_integ/dR_integ)
                 print("C: ", C)
-            return dSL_integ/dSR_integ - C
+            return dL_integ/dR_integ - C
         res = fsolve(func, C_init, factor = 0.1, xtol = 1e-6)
         self.transf = transf(res[0])
-        dSL_integ, err = integrate.quad(d_left(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-        dSR_integ, err = integrate.quad(d_right(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-        print(res[0]- dSL_integ/dSR_integ)
+        dL_integ, err = integrate.quad(d_left(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+        dR_integ, err = integrate.quad(d_right(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+        print(res[0]- dL_integ/dR_integ)
         return res[0]
 
     def _noise_condition(self,C):
@@ -555,24 +498,86 @@ class two_terminals:
         self.transf = self._transmission_noise(res[0])
         return res[0]
 
+    def optimize_for_best_noise(self,C_init = 1, secondary_prop = "muR", left_current = "entropy"):
+        transf = lambda C: self._transmission_noise(C)
+        
+        C_limit = self.C_limit_noise()
+        if secondary_prop == "muR":
+            if left_current == "entropy":
+                d_right = self.dSR_dmuR
+                d_left = self.dSL_dmuR
+            elif left_current == "free":
+                pass
+            else:
+                print("Invalid left current")
+                return -1
 
-    def _product_condition(self,thetas):
+        elif secondary_prop == "TR":
+            if left_current == "entropy":
+                pass
+            elif left_current == "free":
+                pass
+            else:
+                print("Invalid left current")
+                return -1
+        elif secondary_prop == "z":
+            if left_current == "entropy":
+                pass
+            elif left_current == "free":
+                pass
+            else:
+                print("Invalid left current")
+                return -1
+        else:
+            print("Invalid secondary prop")
+            return -1
+    
+       
+        d_left,d_right = self.secondary_prop_picker(secondary_prop, left_current)
+
+        def func(C):
+            if C < C_limit:
+                return 1000
+
+            dL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            dR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            if dL_integ == 0.0 or dR_integ == 0.0:
+                if self.debug:
+                    print("increasing C")
+                C *= 1.5
+                #C_zeros = 
+                dL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+                dR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            if self.debug:
+                print("dL_integ: ", dL_integ)
+                print("dR_integ: ", dR_integ)
+                print("d frac: ", dL_integ/dR_integ)
+                print("C: ", C)
+            return dL_integ/dR_integ - C
+        res = fsolve(func, C_init, factor = 0.1, xtol = 1e-6)
+        self.transf = transf(res[0])
+        dL_integ, err = integrate.quad(d_left(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+        dR_integ, err = integrate.quad(d_right(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+        print(res[0]- dL_integ/dR_integ)
+        return res[0]
+    
+    def _product_condition(self,thetas, alpha = 0.5):
         con_avg = thetas[0]
         con_noise = thetas[1]
         C = thetas[2]
         div = lambda E: self.coeff_con(E)*(self.occupf_L(E)-self.occupf_R(E))
-        term_one = lambda E: -con_avg*self.coeff_noise(E)**2*(self.occupf_L(E)*(1-self.occupf_L(E))+self.occupf_R(E)*(1-self.occupf_R(E)))#/div(E)
-        term_two = lambda E: -con_noise*self.coeff_avg(E)*(self.occupf_L(E)-self.occupf_R(E))#/div(E)
+        term_one = lambda E: -2*alpha*con_avg*self.coeff_noise(E)**2*(self.occupf_L(E)*(1-self.occupf_L(E))+self.occupf_R(E)*(1-self.occupf_R(E)))#/div(E)
+        term_two = lambda E: -2*(1-alpha)*con_noise*self.coeff_avg(E)*(self.occupf_L(E)-self.occupf_R(E))#/div(E)
         term_three = lambda E: C*div(E)
         opt_func = lambda E: term_one(E)+term_two(E)+term_three(E)
         return opt_func
 
-    def _transmission_product(self,thetas):
+    def _transmission_product(self,thetas, alpha = 0.5):
         # con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
         # avg_integrands = lambda E: self.coeff_avg(E)*(self.occupf_L(E)- self.occupf_R(E))
             
         #print(-thetas[0]*thetas[1] + max_prod)
-        transf = lambda E: np.heaviside(self._product_condition(thetas)(E), 0)#*np.heaviside(avg_integrands(E),0)*np.heaviside(con_integrands(E),0)
+        transf = lambda E: np.heaviside(self._product_condition(thetas, alpha)(E), 0)#*np.heaviside(avg_integrands(E),0)*np.heaviside(con_integrands(E),0)
         return transf
         
     def optimize_for_product(self, target, thetas_init = None, alpha = 0.5, secondary = False):
@@ -603,7 +608,7 @@ class two_terminals:
             #     print(test_current)
             # if self.debug:
             #     print("C_init: ", C_init)
-            thetas_init = [max_avg/2, max_noise/2, 1]
+            thetas_init = [max_avg/2, max_noise/2, 10]
             #thetas_init = [max_avg/2, max_noise/2, 0.1]
             if self.debug:
                 print("Thetas init: ", thetas_init)
@@ -624,7 +629,7 @@ class two_terminals:
         self.transf = self._transmission_product(res)
         return res
 
-    def calc_for_product_determined(self, C):
+    def calc_for_product_determined(self, C, alpha = 0.5):
         max_transf = lambda E: np.heaviside(self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
         self.transf = max_transf
         max_noise = self.noise_cont(self.coeff_noise)
@@ -635,16 +640,16 @@ class two_terminals:
             con_avg = thetas[1]
             if any(thetas < 0):
                 return 1000,1000
-            transf = self._transmission_product([con_avg, con_noise, C])
+            transf = self._transmission_product([con_avg, con_noise, C], alpha)
             nois = self.noise_cont(self.coeff_noise, transf)
             avg = self._current_integral(self.coeff_avg, transf)
-            con = self._current_integral(self.coeff_con, transf)
+            #con = self._current_integral(self.coeff_con, transf)
             if self.debug: 
                 print("Thetas: ", thetas)
                 print("opt func: ", avg - con_avg, nois - con_noise)
             return avg - con_avg, nois - con_noise
-        res = fsolve(opt_func, [max_avg, max_noise], factor = 0.1)
-        return res
+        calc_avg, calc_noise = fsolve(opt_func, [max_avg, max_noise], factor = 0.1)
+        return calc_avg,calc_noise
 
     def carnot(self):
         return (1-self.TR/self.TL)
@@ -674,7 +679,72 @@ class two_terminals:
         f_dist = 1/(1+np.exp((E-mu)/(T*kb)))
         return f_dist
     
+    def entropy_coeff(E, occupf):
+        coeff = kb*np.log(occupf(E)/(1-occupf(E)))
+        return coeff
+
+    def left_entropy_coeff(self,E):
+        return two_terminals.entropy_coeff(E, self.occupf_L)
+
+    def right_entropy_coeff(self,E):
+        return  -two_terminals.entropy_coeff(E, self.occupf_R)
+
+    def left_heat_coeff(self,E):
+        return E-self.muL
+
+    def right_heat_coeff(self,E):
+        return -E+self.muR
+
+    def left_particle_coeff(self,E):
+        return 1
+
+    def right_particle_coeff(self,E):
+        return -1
+
+    def left_electric_coeff(self,E):
+        return self.muL
+
+    def right_electric_coeff(self,E):
+        return -self.muR
     
+    def power_coeff(self,E):
+        return (self.muR-self.muL)
+
+    def left_energy_coeff(self,E):
+        return E
+
+    def right_energy_coeff(self, E):
+        return -E
+    
+    def left_noneq_free_coeff(self,E):
+        return -E - self.TR*self.left_entropy_coeff(E)
+
+    def calc_left_particle_current(self):
+        return self._current_integral(self.left_particle_coeff)
+
+    def calc_right_particle_current(self):
+        return self._current_integral(self.right_particle_coeff)
+
+    def calc_left_energy_current(self):
+        return self._current_integral(self.left_energy_coeff)
+
+    def calc_right_energy_current(self):
+        return self._current_integral(self.right_energy_coeff)
+    
+    def calc_left_heat_current(self):
+        return self._current_integral(self.left_heat_coeff)
+    
+    def calc_right_heat_current(self):
+        return self._current_integral(self.right_heat_coeff)
+    
+    def calc_left_entropy_current(self):
+        return self._current_integral(self.left_entropy_coeff)
+    
+    def calc_right_entropy_current(self):
+        return self._current_integral(self.right_entropy_coeff)
+    
+    def calc_right_entropy_current(self):
+        return self._current_integral(self.left_noneq_free_coeff)    
     ## SLICED FUNCTIONS ##
     
     def slice_current_integral(self, coeff, transf_in = None, return_integrands = False, n_Es = 100):
