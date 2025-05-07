@@ -9,8 +9,8 @@ from scipy import integrate
 ### MATPLOT SETUP ###
 
 cold = "#007EF5"
-hot = "#FF0A1B"
-nonthermal = "#B301CB"
+hot = "#FF4400"
+nonthermal = "#9D00FF"
 
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['font.sans-serif'] = 'Segoe UI'
@@ -781,7 +781,7 @@ if __name__ == "__main__":
 
 
     fig_type = ".svg"
-    secondary = False
+    secondary = True
     if secondary:
         thermal_left.debug = False
         nonthermal_left.debug = False
@@ -812,6 +812,7 @@ if __name__ == "__main__":
         #     np.load()
 
         fig = secondaryPlot.make_figure(make_eff=True, make_noise=True, make_product=True, filenames=filenames, max_filenames=max_filenames)
+        #plt.suptitle("Optimized plots for " + dist_type + r", metric $\dot S_R/\dot S_L$")
         plt.suptitle("Optimized plots for " + dist_type + r", metric $\dot S_R/\dot S_L$")
         plt.tight_layout()
         plt.savefig("figs/"+dist_type+"_"+secondary_prop+".png")
@@ -843,11 +844,7 @@ if __name__ == "__main__":
         print(JR_arr)
         # print(prod_max)
         # plt.plot(Es, max_transf(Es))
-        
-        
-        # plt.show()
-        fig = secondaryPlot.make_dist_figure()
-        plt.savefig("figs/"+dist_type+"_dist.png")        
+          
     else:   
         thermal_left.debug = False
         nonthermal_left.debug = False             
