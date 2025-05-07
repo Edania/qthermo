@@ -6,6 +6,15 @@ from thermo_funcs import two_terminals
 from scipy.optimize import fsolve, minimize
 from scipy import integrate
 
+### MATPLOT SETUP ###
+
+cold = "#007EF5"
+hot = "#FF0A1B"
+nonthermal = "#B301CB"
+
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.sans-serif'] = 'Segoe UI'
+
 def thermal_with_lorentz(mu, T, width, height, position):
     lorentz_max = 2/(np.pi * width)
     height_factor = height/lorentz_max
@@ -99,60 +108,63 @@ class PowerPlot:
     def make_figure(self, make_eff = True, make_noise = True, make_product = True,
                     filenames = [None]*6):
         #make_list = [make_eff, make_noise, make_product]
-        fig, axs = plt.subplots(1, 3, figsize = (10,5))
+        fig, axs = plt.subplots(1, 3, figsize = (8,4))
         if make_eff:
-            self.eff_plot(axs[0], label = "thermal",targets = self.targets_th,system = self.system_th,  filename = filenames[0])
-            self.eff_plot(system = self.system_nth, axs = axs[0], targets = self.targets_nth, label = "nonthermal", filename=filenames[1])
+            self.eff_plot(axs[0], color = hot, label = "thermal",targets = self.targets_th,system = self.system_th,  filename = filenames[0])
+            self.eff_plot(system = self.system_nth, color = nonthermal, axs = axs[0], targets = self.targets_nth, label = "nonthermal", filename=filenames[1])
             axs[0].legend()
         if make_noise:
-            self.noise_plot(system=self.system_th, axs=axs[1], targets = self.targets_th, label = "thermal", filename=filenames[2])
-            self.noise_plot(system=self.system_nth, axs=axs[1], targets=self.targets_nth, label = "nonthermal", filename=filenames[3])
+            self.noise_plot(system=self.system_th, color = hot, axs=axs[1], targets = self.targets_th, label = "thermal", filename=filenames[2])
+            self.noise_plot(system=self.system_nth, color = nonthermal, axs=axs[1], targets=self.targets_nth, label = "nonthermal", filename=filenames[3])
             axs[1].legend()
         if make_product:
-            self.product_plot(system=self.system_th, axs=axs[2], targets = self.targets_th, label = "thermal", filename=filenames[4])
-            self.product_plot(system=self.system_nth, axs=axs[2], targets=self.targets_nth, label = "nonthermal", filename=filenames[5])
+            self.product_plot(system=self.system_th, color = hot, axs=axs[2], targets = self.targets_th, label = "thermal", filename=filenames[4])
+            self.product_plot(system=self.system_nth, color = nonthermal, axs=axs[2], targets=self.targets_nth, label = "nonthermal", filename=filenames[5])
             axs[2].legend()
         
         
         plt.tight_layout()
         return fig
 
-    def make_dist_figure(self):
-        Es = np.linspace(self.system_nth.E_low, self.system_nth.E_high,1000)
-        fig = plt.figure()
-        plt.plot(Es, self.system_nth.occupf_L(Es), label = "Non_thermal")
-        plt.plot(Es, self.system_th.occupf_L(Es), label = "Thermal probe")
-        plt.plot(Es, self.system_th.occupf_R(Es), label = "Right")
+    def make_dist_figure(self, E_min = None, E_max = None):
+        if E_min == None or E_max == None:
+            Es = np.linspace(self.system_nth.E_low, self.system_nth.E_high,1000)
+        else:
+            Es = np.linspace(E_min, E_max, 1000)
+        fig = plt.figure(figsize= (3.5, 3.5))
+        plt.plot(Es, self.system_nth.occupf_L(Es), label = "Nonthermal", color = nonthermal, zorder = 3)
+        plt.plot(Es, self.system_th.occupf_L(Es), label = "Thermal probe", color = hot, zorder = 2)
+        plt.plot(Es, self.system_th.occupf_R(Es), label = "Cold thermal", color = cold, zorder = 1)
         plt.legend()
-        plt.xlabel("E")
-        plt.ylabel("Occupation")
-        plt.title("Occupation functions")
+        plt.xlabel(r"$\varepsilon$ [$k_B T_0$]")
+        plt.ylabel("Occupation probability")
+        plt.title("Thermal distribution with \n Lorentzian peak and dip")
         plt.tight_layout()
         return fig
 
     def make_example_figure(self):
         pass
 
-    def eff_plot(self, axs, label,system=None, targets = None,filename = None):
+    def eff_plot(self, axs, color, label,system=None, targets = None,filename = None):
         if self.verbose:
             print("Making efficiency plot for ", label)
         JR_arr, eff_arr, C_arr = self.get_eff_data(system, targets, filename)
-        axs.plot(JR_arr, eff_arr, label=label)
+        axs.plot(JR_arr, eff_arr, label=label, color = color)
         axs.set_title("Efficiency vs cooling power")
-        axs.set_xlabel("J_R")
+        axs.set_xlabel(r"$J_R$")
         axs.set_ylabel(r"$\eta$")
 
-    def noise_plot(self,  axs, label,system=None, targets = None,filename = None):
+    def noise_plot(self,  axs, color, label,system=None, targets = None,filename = None):
         if self.verbose:
             print("Making noise plot for ", label)
 
         JR_arr, noise_arr, C_arr = self.get_noise_data(system, targets, filename)
-        axs.plot(JR_arr, noise_arr, label = label)
+        axs.plot(JR_arr, noise_arr, label = label, color = color)
         axs.set_title("Noise vs cooling power")
-        axs.set_xlabel("J_R")
+        axs.set_xlabel(r"$J_R$")
         axs.set_ylabel(r"$S$")
 
-    def product_plot(self,  axs, label,system=None, targets = None,filename = None):
+    def product_plot(self,  axs, color, label,system=None, targets = None,filename = None):
         if self.verbose:
             print("Making product plot for ", label)
         JR_arr, eff_arr, C_arr, err_arr = self.get_product_data(system, targets, filename)
@@ -160,9 +172,9 @@ class PowerPlot:
         JR_arr = JR_arr[keep_index]
         eff_arr = eff_arr[keep_index]
         #s_arr = s_arr[keep_index]
-        axs.plot(JR_arr, eff_arr, label=label)
+        axs.plot(JR_arr, eff_arr, label=label, color = color)
         axs.set_title("Product vs cooling power")
-        axs.set_xlabel("J_R")
+        axs.set_xlabel(r"$J_R$")
         axs.set_ylabel(r"$S/ \eta$")
 
     def produce_eff_data(self, system:two_terminals, targets):
@@ -730,7 +742,7 @@ if __name__ == "__main__":
     E_high = 5
     Es = np.linspace(E_low, E_high,1000)
 
-    save_data = True
+    save_data = False
     load_params = True
     dist_type = "lorentz_peak"
 
@@ -741,8 +753,8 @@ if __name__ == "__main__":
         nth_dist_params = np.load("data/nth_params_"+dist_type+".npz")['arr_0']
     else:
         th_dist_params = np.array([muR, TR])
-        #nth_dist_params = np.array([muL, TL, 0.1 ,0.4, 1])
-        nth_dist_params = np.array([muL, TL, 1, 0.5])
+        nth_dist_params = np.array([muL, TL, 0.1 ,0.4, 1])
+        #nth_dist_params = np.array([muL, TL, 1, 0.5])
     occupf_L_nth = thermal_with_lorentz(*nth_dist_params)
     #occupf_L_nth = two_thermals(*nth_dist_params)
     #dist_params = np.array([muL,TL,muR,TR])
@@ -767,7 +779,9 @@ if __name__ == "__main__":
     thermal_left.adjust_limits()
     nonthermal_left.adjust_limits()
 
-    secondary = True
+
+    fig_type = ".svg"
+    secondary = False
     if secondary:
         thermal_left.debug = False
         nonthermal_left.debug = False
@@ -775,7 +789,7 @@ if __name__ == "__main__":
         filenames = ["data/th_"+dist_type+"_eff_"+secondary_prop + ".npz","data/nth_"+dist_type+"_eff_"+secondary_prop + ".npz","data/th_"+dist_type+"_noise_"+secondary_prop + ".npz",
                     "data/nth_"+dist_type+"_noise_"+secondary_prop + ".npz","data/th_"+dist_type+"_product_"+secondary_prop + ".npz","data/nth_"+dist_type+"_product_"+secondary_prop + ".npz"]
         max_filenames = ["data/th_max_"+dist_type+secondary_prop+".npz","data/nth_max_"+dist_type+secondary_prop+".npz"]
-        secondaryPlot = SecondaryPlot(thermal_left, nonthermal_left, 1, 5, secondary_prop, n_points=20, verbose=True)
+        secondaryPlot = SecondaryPlot(thermal_left, nonthermal_left, 1, 5, secondary_prop, n_points=50, verbose=True)
         if save_data:
             if not load_params:            
                 np.savez("data/th_params_"+dist_type, th_dist_params)
@@ -786,13 +800,13 @@ if __name__ == "__main__":
             # secondaryPlot.save_noise(nonthermal_left, filenames[3])            
 
 
-            # # secondaryPlot.save_product(thermal_left, filenames[4])
-            # # secondaryPlot.save_product(nonthermal_left, filenames[5])
-            # secondaryPlot.save_max(thermal_left, max_filenames[0])
-            # secondaryPlot.save_max(nonthermal_left, max_filenames[1])
+            # secondaryPlot.save_product(thermal_left, filenames[4])
+            # secondaryPlot.save_product(nonthermal_left, filenames[5])
+            secondaryPlot.save_max(thermal_left, max_filenames[0])
+            secondaryPlot.save_max(nonthermal_left, max_filenames[1])
 
-            secondaryPlot.fix_product_data(filenames[4], thermal_left)
-            secondaryPlot.fix_product_data(filenames[5], nonthermal_left)
+            # secondaryPlot.fix_product_data(filenames[4], thermal_left)
+            # secondaryPlot.fix_product_data(filenames[5], nonthermal_left)
 
         # else:
         #     np.load()
@@ -842,8 +856,8 @@ if __name__ == "__main__":
         powerPlot = PowerPlot(thermal_left, nonthermal_left, True, n_targets=50)
         if save_data:
             
-            # np.savez("data/th_params_"+dist_type, th_dist_params)
-            # np.savez("data/nth_params_"+dist_type, nth_dist_params)
+            np.savez("data/th_params_"+dist_type, th_dist_params)
+            np.savez("data/nth_params_"+dist_type, nth_dist_params)
             # powerPlot.save_eff(thermal_left, powerPlot.targets_th, filenames[0])
             # powerPlot.save_eff(nonthermal_left, powerPlot.targets_nth, filenames[1])
             # powerPlot.save_noise(thermal_left, powerPlot.targets_th, filenames[2])
@@ -854,14 +868,15 @@ if __name__ == "__main__":
         #     np.load()
 
         fig = powerPlot.make_figure(make_eff=True, make_noise=True, make_product=True, filenames=filenames)
-        plt.suptitle("Optimized plots for " + dist_type + r", metric $\dot S_R/\dot S_L$")
+        #plt.suptitle("Optimized plots for " + dist_type + r", metric $\dot S_R/\dot S_L$")
+        plt.suptitle("Optimized quantifiers over cooling power spectrum for thermal with Lorentzian peak and dip")
         plt.tight_layout()
-        plt.savefig("figs/"+dist_type+".png")
+        plt.savefig("figs/"+dist_type+fig_type)
 
         # fig = plt.figure()
         JR_arr, noise_arr, C_arr, err_arr =powerPlot.get_product_data(filename=filenames[5])
         
         # plt.plot(powerPlot.targets_nth-JR_arr)
         # plt.show()
-        fig = powerPlot.make_dist_figure()
-        plt.savefig("figs/"+dist_type+"_dist.png")
+        fig = powerPlot.make_dist_figure(-3,3)
+        plt.savefig("figs/"+dist_type+"_dist"+fig_type)
