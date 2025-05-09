@@ -420,7 +420,8 @@ class two_terminals:
                 return current
             res = fsolve(fixed_current_eq,C_init, factor = 0.1, xtol = 1e-6)
             self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
-            return res[0]
+            err = fixed_current_eq(res[0])
+            return res[0], err
 
 
     def optimize_for_best_avg(self,C_init = 1, fixed = "nominator", secondary_prop = "muR", left_current = "entropy"):
@@ -584,7 +585,7 @@ class two_terminals:
         fixed_current_eq = lambda C: self._current_integral(self.coeff_noise, transf(C)) - target
         res = fsolve(fixed_current_eq,C_init, factor = 0.1, xtol=1e-6)
         self.transf = self._transmission_noise(res[0])
-        return res[0]
+        return res[0], fixed_current_eq(res[0])
 
     def optimize_for_best_noise(self,C_init = 1, secondary_prop = "muR"):
         transf = lambda C: self._transmission_noise(C)
