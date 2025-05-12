@@ -17,6 +17,8 @@ nonthermal = "#9D00FF"
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['font.sans-serif'] = 'Segoe UI'
 
+plt.rcParams["mathtext.fontset"] = "cm"
+
 def thermal_with_lorentz(mu, T, width, height, position):
     lorentz_max = 2/(np.pi * width)
     height_factor = height/lorentz_max
@@ -59,7 +61,6 @@ def buttiker_probe(system:two_terminals, set_right = True):
     system.muR = res[0]
     system.TR = res[1]
     system.set_fermi_dist_right()
-
 
 def plot_max(system:two_terminals):
     sys_copy = copy.deepcopy(system)
@@ -386,8 +387,6 @@ class PowerPlot:
         prod_vector = np.array([prod_avg, prod_nois, C_prod])
         np.savez(filename, C_avg = C_avg, C_noise = C_noise, prod_vector = prod_vector)
             
-
-
 class SecondaryPlot:
     def __init__(self, system_th:two_terminals, system_nth:two_terminals, s_min, s_max, secondary_prop, n_points = 20, verbose = False):
         self.system_th = system_th
@@ -716,6 +715,8 @@ class SecondaryPlot:
         np.savez(filename, JR_arr = JR_arr, avg_arr = avg_arr, noise_arr = noise_arr, prod_arr = prod_arr, s_arr = self.s_arr)
 
     
+
+
 if __name__ == "__main__":
     midT = 1
     deltaT = 0.8
