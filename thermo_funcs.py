@@ -476,7 +476,7 @@ class two_terminals:
             dL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
             dR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
             k = 10
-            while dL_integ == 0.0 or dR_integ == 0.0:
+            if dL_integ == 0.0 or dR_integ == 0.0:
                 if self.debug:
                     print("In while loop")
                 
@@ -513,9 +513,9 @@ class two_terminals:
                 if self.debug:
                     print(roots_init)
                     print(dL_integ, dR_integ)
-                k += 1
-                if k == 11:
-                    break
+                # k += 1
+                # if k == 11:
+                #     break
             if self.debug:
                 print("dL_integ: ", dL_integ)
                 print("dR_integ: ", dR_integ)
@@ -527,7 +527,7 @@ class two_terminals:
         diff = func(res[0], set_Es=False)
         # dL_integ, err = integrate.quad(d_left(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
         # dR_integ, err = integrate.quad(d_right(transf(res[0])),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-        print(diff)
+
         return res[0], diff
 
     def _noise_condition(self,C):
@@ -751,8 +751,9 @@ class two_terminals:
             avg = self._current_integral(self.coeff_avg, transf)
             con = self._current_integral(self.coeff_con, transf)
             if self.debug: 
-                print("Thetas: ", thetas)
-                print("opt func: ", avg - thetas[0], nois - thetas[1], con-target)
+                pass
+                # print("Thetas: ", thetas)
+                # print("opt func: ", avg - thetas[0], nois - thetas[1], con-target)
             return avg - thetas[0], nois - thetas[1], con-target
         
         res = fsolve(opt_func, thetas_init, factor=1, xtol=1e-6)
@@ -776,11 +777,31 @@ class two_terminals:
             nois = self.noise_cont(self.coeff_noise, transf)
             avg = self._current_integral(self.coeff_avg, transf)
             #con = self._current_integral(self.coeff_con, transf)
+            if nois == 0.0 or avg == 0.0:
+                temp_Es = np.linspace(self.E_low, self.E_high, 100000) 
+                if any(transf(temp_Es) == 1):
+                    temp_E_low = self.E_low
+                    temp_E_high = self.E_high
+                    limits = temp_Es[np.argwhere(transf(temp_Es)[1:] - transf(temp_Es)[:-1] != 0).flatten()]
+                    self.E_low = limits[0]*0.95
+                    self.E_high = limits[-1]*1.05
+                    nois = self.noise_cont(self.coeff_noise, transf)
+                    avg = self._current_integral(self.coeff_avg, transf)
+                    self.E_low = temp_E_low
+                    self.E_high = temp_E_high
+                else:
+                    pass
+
             if self.debug: 
+                temp_Es = np.linspace(self.E_low, self.E_high, 100000) 
+                # plt.plot(temp_Es, transf(temp_Es))
+                # plt.show()
                 print("Thetas: ", thetas)
+                print("Noise: ", nois)
+                print("Avg: ", avg)
                 print("opt func: ", avg - con_avg, nois - con_noise)
             return avg - con_avg, nois - con_noise
-        calc_avg, calc_noise = fsolve(opt_func, [0, 0], factor = 10)
+        calc_avg, calc_noise = fsolve(opt_func, [0, 0], factor = 0.1)
         #print(opt_func(np.array([calc_avg, calc_noise, C])))
         #print(calc_avg, calc_noise)
         err = np.max(np.abs(opt_func(np.array([calc_avg, calc_noise, float(C)]))))
