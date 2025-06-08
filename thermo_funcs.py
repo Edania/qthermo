@@ -763,10 +763,10 @@ class two_terminals:
         return res, err
 
     def calc_for_product_determined(self, C, alpha = 0.5):
-        max_transf = lambda E: np.heaviside(self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
-        self.transf = max_transf
-        max_noise = self.noise_cont(self.coeff_noise)
-        max_avg = self._current_integral(self.coeff_avg)       
+        # max_transf = lambda E: np.heaviside(self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
+        # self.transf = max_transf
+        # max_noise = self.noise_cont(self.coeff_noise)
+        # max_avg = self._current_integral(self.coeff_avg)       
         
         def opt_func(thetas):
             con_noise = thetas[1]
@@ -793,7 +793,7 @@ class two_terminals:
                     pass
 
             if self.debug: 
-                temp_Es = np.linspace(self.E_low, self.E_high, 100000) 
+                #temp_Es = np.linspace(self.E_low, self.E_high, 100000) 
                 # plt.plot(temp_Es, transf(temp_Es))
                 # plt.show()
                 print("Thetas: ", thetas)
@@ -801,7 +801,7 @@ class two_terminals:
                 print("Avg: ", avg)
                 print("opt func: ", avg - con_avg, nois - con_noise)
             return avg - con_avg, nois - con_noise
-        calc_avg, calc_noise = fsolve(opt_func, [0, 0], factor = 0.1)
+        calc_avg, calc_noise = fsolve(opt_func, [0.01, 0.01], factor = 0.1)
         #print(opt_func(np.array([calc_avg, calc_noise, C])))
         #print(calc_avg, calc_noise)
         err = np.max(np.abs(opt_func(np.array([calc_avg, calc_noise, float(C)]))))
