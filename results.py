@@ -207,6 +207,90 @@ class PowerPlot:
         #fig.suptitle("Transmission for maximized cooling with\n arbitrary nonthermal resource")
         return fig 
 
+    def make_crossing_figure(self, filename, system:two_terminals, type = "eff"):
+        occupf_L = system.occupf_L
+        occupf_R = system.occupf_R
+
+        if type == "eff":
+            JR_arr, data_arr, C_arr = self.get_eff_data(filename=filename)
+            y = system.coeff_avg
+            x = system.coeff_con
+            factor_two = lambda E: y(E)-C_arr.reshape(-1,1)*x(E)
+            factor_one = lambda E: occupf_L(E)-occupf_R(E)
+            
+
+            Es = np.linspace(system.E_low, system.E_high, 10000)
+            fig, axs = plt.subplots(1, 3, figsize = (246*2*pt, 150*pt), layout = "constrained")
+            axs[0].plot(Es - system.muR, occupf_L(Es), label = "Left", color = nonthermal)
+            axs[0].plot(Es - system.muR, occupf_R(Es), label = "Right", color = cold)
+            #axs[0].plot(Es-system.muR, system._transmission_avg(C_arr[10], x, y)(Es), label = "transf")
+            axs[0].fill_between(Es- system.muR, 1, where = factor_one(Es) > 0, facecolor = "lightgrey", zorder = 1)
+            axs[0].set_xlabel("Energy")
+            axs[0].set_xlabel(r"$\varepsilon - \mu$ [$k_B T_0$]")
+            axs[0].set_ylabel("Factor value")
+            #axs[0].legend()
+            
+            #axs[0].grid()
+            axs[0].set_title("Occupation functions")
+
+            axs[1].plot(Es-system.muR, -y(Es), label = "Left", color = nonthermal)
+            axs[1].plot(Es-system.muR, -C_arr[10]*x(Es), label = "Right", color = cold)
+
+            #axs[1].plot(Es-system.muR, system._transmission_avg(C_arr[10], x, y)(Es), label = "transf")
+            axs[1].fill_between(Es- system.muR, 5, -5, where = factor_two(Es)[10,:] < 0, facecolor = "lightgrey", zorder = 1)
+            axs[1].set_xlabel("Energy")
+            axs[1].set_xlabel(r"$\varepsilon - \mu$ [$k_B T_0$]")
+            axs[1].set_ylabel("Factor value")
+            #axs[1].legend()
+            axs[1].set_title("Coefficients")
+            #axs[1].grid()
+            axs[2].fill_between(Es- system.muR, 0, 1, where = factor_two(Es)[10,:] < 0, facecolor = "gray", zorder = 1, alpha = 0.5)
+            axs[2].fill_between(Es- system.muR, 0, 1, where = factor_one(Es) > 0, facecolor = "gray", zorder = 1, alpha = 0.5)
+            # fig = plt.figure(figsize=(246*pt, 200*pt), layout = "constrained")
+            # plt.plot(Es, factor_one(Es)[10,:], label = "Factor one")
+            # plt.plot(Es, factor_two(Es), label = "Factor two")
+            # plt.xlabel("Energy")
+            # plt.ylabel("Factor value")
+            # plt.legend()
+            return fig
+
+        elif type == "noise":
+            JR_arr, data_arr, C_arr = self.get_noise_data(filename)
+        elif type == "product":
+            JR_arr, data_arr, C_arr, err_arr = self.get_product_data(filename)
+            
+        else:
+            raise TypeError("Unrecognized type for crossing figure")
+        
+    def make_all_crossing_figure(self, filenames, system:two_terminals):
+        fig, axs = plt.subplots(1,3,figsize=(246*2*pt, 200*pt))
+        JR_arr, data_arr, C_eff = self.get_eff_data(filename=filenames[0])
+        JR_arr, data_arr, C_noise = self.get_noise_data(filename=filenames[1])
+        JR_arr, data_arr, C_prod, err_arr = self.get_product_data(filename=filenames[2])
+        C_pick = 100
+        cond_eff = system._avg_condition(C_eff[C_pick], system.coeff_avg, system.coeff_con)
+        cond_noise = system._noise_condition(C_noise[C_pick])
+        # if type(C_prod[C_pick]) != np.array:
+        #     system.set_transmission_product_opt(C_prod[C_pick])
+        #     nois = system.noise_cont(system.coeff_noise)
+        #     avg = system._current_integral(system.coeff_avg)
+        #     cond_prod = system._product_condition([avg, nois, C_prod[C_pick]])
+        # else:    
+        #     cond_prod = system._product_condition(C_prod[C_pick,:])
+        
+        Es = np.linspace(system.E_low, system.E_high, 10000)
+        axs[0].plot(Es, cond_eff(Es))
+        axs[0].set_title("Eff cond")
+        axs[0].grid()
+        axs[1].plot(Es, cond_noise(Es))
+        axs[1].set_title("Noise cond")
+        axs[1].grid()
+        # axs[2].plot(Es, cond_prod(Es))
+        axs[2].set_title("Prod cond")
+        axs[2].grid()
+        return fig
+
+
     def eff_plot(self, axs, color, label,system=None, targets = None,filename = None):
         if self.verbose:
             print("Making efficiency plot for ", label)
@@ -216,6 +300,7 @@ class PowerPlot:
         axs.set_xlabel(r"$J_R$")
         axs.set_ylabel(r"$\eta$ [$\dot S_R/\dot S_L$]")
         axs.set_xlim([0, np.max(JR_arr)])
+
     def noise_plot(self,  axs, color, label,system=None, targets = None,filename = None):
         if self.verbose:
             print("Making noise plot for ", label)
@@ -232,14 +317,17 @@ class PowerPlot:
             print("Making product plot for ", label)
         JR_arr, eff_arr, C_arr, err_arr = self.get_product_data(system, targets, filename)
         keep_index = np.argwhere(np.abs(err_arr) < 1e-4)
+        print(err_arr)
+        print(JR_arr)
         JR_arr = JR_arr[keep_index]
         eff_arr = eff_arr[keep_index]
-        #s_arr = s_arr[keep_index]
+        # s_arr = s_arr[keep_index]
         axs.plot(JR_arr, eff_arr, label=label, color = color)
         axs.set_title("Lowest noise-eff. fraction")
         axs.set_xlabel(r"$J_R$")
         axs.set_ylabel(r"$S_{\dot S_R}/ \eta$")
-        axs.set_xlim([0, np.max(JR_arr)])
+        #axs.set_xlim([0, np.max(JR_arr)])
+
     def produce_eff_data(self, system:two_terminals, targets):
         if self.verbose:
             print("Producing eff data")
@@ -247,13 +335,37 @@ class PowerPlot:
         avg_list = []
         C_min = system.C_limit_avg(system.coeff_con, system.coeff_con)
         jmax,_,_ = system.constrained_current_max()
-        C_max = system.optimize_for_avg(0.95*jmax, 10)
-        C_list = np.geomspace(C_min, C_max, self.n_targets)
+        C_max, err = system.optimize_for_avg(0.95*jmax, 10)
+        #C_list = np.geomspace(C_min, C_max, self.n_targets)
+        C_list = np.linspace(C_min, C_max, self.n_targets)
+        k = 0
+        #print(C_min, C_max, C_list)
         for C in C_list:
+            # if self.verbose:
+            #     print("On target ",k)
             system.set_transmission_avg_opt(C, system.coeff_con, system.coeff_avg)
-            JR_list.append(system._current_integral(system.coeff_con))
-            avg_list.append(system._current_integral(system.coeff_avg))
+            JR = system._current_integral(system.coeff_con)
+            avg = system._current_integral(system.coeff_avg)
+            if JR == 0.0 or avg == 0.0:
             
+                temp_E_low = system.E_low
+                temp_E_high = system.E_high
+                temp_Es = np.linspace(system.E_low, system.E_high, 100000)
+                if any(system.transf(temp_Es) == 1):
+                    limits = temp_Es[np.argwhere(system.transf(temp_Es)[1:] - system.transf(temp_Es)[:-1] != 0).flatten()]
+                    system.E_low = limits[0]*0.95
+                    system.E_high = limits[-1]*1.05
+                    JR_list.append(system._current_integral(system.coeff_con))
+                    avg_list.append(system._current_integral(system.coeff_avg))
+                    system.E_low = temp_E_low
+                    system.E_high = temp_E_high
+                else:
+                    JR_list.append(JR)
+                    avg_list.append(avg)                                       
+            else:
+                JR_list.append(JR)
+                avg_list.append(avg)
+            k += 1
         # C_list = []
         # for target in targets:
         #     if self.verbose:
@@ -274,16 +386,39 @@ class PowerPlot:
 
         JR_list = []
         noise_list = []
-        C_min = 0.01#system.C_limit_avg(system.coeff_con, system.coeff_con)
+        C_min = 0#system.C_limit_avg(system.coeff_con, system.coeff_con)
         jmax,_,_ = system.constrained_current_max()
-        C_max = system.optimize_for_noise(0.95*jmax, 10)
-        C_list = np.geomspace(C_min, C_max, self.n_targets)
+        C_max, err = system.optimize_for_noise(0.95*jmax, 10)
+        # C_list = np.geomspace(C_min, C_max, self.n_targets)
+        C_list = np.linspace(C_min, C_max, self.n_targets)
         for C in C_list:
             system.set_transmission_noise_opt(C)
-            JR_list.append(system._current_integral(system.coeff_con))
+            
+            nois = system.noise_cont(system.coeff_noise)
+            JR = system._current_integral(system.coeff_con)
+            if JR == 0.0 or nois == 0.0:
+
+                temp_E_low = system.E_low
+                temp_E_high = system.E_high
+                temp_Es = np.linspace(system.E_low, system.E_high, 100000)
+                if any(system.transf(temp_Es) == 1):
+                    limits = temp_Es[np.argwhere(system.transf(temp_Es)[1:] - system.transf(temp_Es)[:-1] != 0).flatten()]
+                    system.E_low = limits[0]*0.95
+                    system.E_high = limits[-1]*1.05
+                    noise_list.append(system.noise_cont(system.coeff_noise))
+                    JR_list.append(system._current_integral(system.coeff_con))
+
+                    system.E_low = temp_E_low
+                    system.E_high = temp_E_high            
+                else:
+                    JR_list.append(JR)
+                    noise_list.append(nois)
+
+            else:
+                JR_list.append(JR)
+                noise_list.append(nois)
             # noise_list.append(system._current_integral(system.coeff_avg))     
             # plot_max(system)
-            
             # plt.plot(Es, system.transf(Es))
             # plt.show()   
         # for target in targets:
@@ -293,7 +428,7 @@ class PowerPlot:
         #     C = system.optimize_for_noise(target, targets[-1]-target)
         #     C_list.append(C)
         #     JR_list.append(system._current_integral(system.coeff_con))
-            noise_list.append(system.noise_cont(system.coeff_noise))
+            
         JR_arr = np.array(JR_list)
         noise_arr = np.array(noise_list)
         C_arr = np.array(C_list)
@@ -306,24 +441,54 @@ class PowerPlot:
         JR_list = []
         product_list = []
         theta_list = []
-        C_min = 0.005#system.C_limit_avg(system.coeff_con, system.coeff_con)
+        C_min = 0.0#system.C_limit_avg(system.coeff_con, system.coeff_con)
         jmax,_,_ = system.constrained_current_max()
         C_list = []
         targets = np.linspace(0,jmax, self.n_targets)
         err_list = []
         [_,_,C_max], err = system.optimize_for_product(0.95*jmax)
-        C_list = np.geomspace(C_min, C_max, self.n_targets)
+        # C_list = np.geomspace(C_min, C_max, self.n_targets)
+        C_list = np.linspace(C_min, C_max, self.n_targets)
         k = 0
         for C in C_list:
             if self.verbose:
                 print("On target nr ", k, "with C = ", C)
             err = system.set_transmission_product_opt(C)
-            JR_list.append(system._current_integral(system.coeff_con))
-            product_list.append(system._current_integral(system.coeff_avg)*system.noise_cont(system.coeff_noise))   
             err_list.append(err)
+            JR = system._current_integral(system.coeff_con)
+            nois = system.noise_cont(system.coeff_noise)
+            avg = system._current_integral(system.coeff_avg)
+            product = nois*avg
+            if JR == 0.0 or product == 0.0:
+                temp_E_low = system.E_low
+                temp_E_high = system.E_high
+                temp_Es = np.linspace(system.E_low, system.E_high, 100000)
+                if any(system.transf(temp_Es) == 1):
+                    limits = temp_Es[np.argwhere(system.transf(temp_Es)[1:] - system.transf(temp_Es)[:-1] != 0).flatten()]
+                    system.E_low = limits[0]*0.95
+                    system.E_high = limits[-1]*1.05
+                    nois = system.noise_cont(system.coeff_noise)
+                    avg = system._current_integral(system.coeff_avg)
+                    JR_list.append(system._current_integral(system.coeff_con))
+                    product_list.append(avg*nois)   
+                    theta_list.append([avg, nois, C])
+                    system.E_low = temp_E_low
+                    system.E_high = temp_E_high  
+                
+
+                else:
+                    JR_list.append(JR)
+                    product_list.append(product)
+                    theta_list.append([avg, nois, C])
+            
+            else:
+                JR_list.append(JR)
+                product_list.append(product)
+                theta_list.append([avg, nois, C])
+            
             if self.verbose:
                 print("Error: ", err)
-                print("JR: ", system._current_integral(system.coeff_con))
+                print("JR: ", JR_list[k])
             k += 1
         # for target in targets:
         #     if self.verbose:
@@ -772,8 +937,8 @@ if __name__ == "__main__":
     Es = np.linspace(E_low, E_high,1000)
 
     save_data = False
-    load_params = True
-    dist_type = "lorentz_peak"
+    load_params = False
+    dist_type = "lorentz_peak_linear"
 
     if load_params:
         th_dist_params = np.load("data/th_params_"+dist_type+".npz")['arr_0']
@@ -810,7 +975,7 @@ if __name__ == "__main__":
 
 
     fig_type = ".png"
-    secondary = True
+    secondary = False
     if secondary:
         thermal_left.debug = False
         nonthermal_left.debug = False
@@ -882,18 +1047,18 @@ if __name__ == "__main__":
         nonthermal_left.debug = False             
         filenames = ["data/th_"+dist_type+"_eff.npz","data/nth_"+dist_type+"_eff.npz","data/th_"+dist_type+"_noise.npz",
                     "data/nth_"+dist_type+"_noise.npz","data/th_"+dist_type+"_product.npz","data/nth_"+dist_type+"_product.npz"]
-        powerPlot = PowerPlot(thermal_left, nonthermal_left, True, n_targets=50)
+        powerPlot = PowerPlot(thermal_left, nonthermal_left, True, n_targets=500)
         if save_data:
             if not load_params:            
                 np.savez("data/th_params_"+dist_type, th_dist_params)
                 np.savez("data/nth_params_"+dist_type, nth_dist_params)
-            # powerPlot.save_eff(thermal_left, powerPlot.targets_th, filenames[0])
-            # powerPlot.save_eff(nonthermal_left, powerPlot.targets_nth, filenames[1])
-            # powerPlot.save_noise(thermal_left, powerPlot.targets_th, filenames[2])
-            # powerPlot.save_noise(nonthermal_left, powerPlot.targets_nth, filenames[3])            
+            powerPlot.save_eff(thermal_left, powerPlot.targets_th, filenames[0])
+            powerPlot.save_eff(nonthermal_left, powerPlot.targets_nth, filenames[1])
+            powerPlot.save_noise(thermal_left, powerPlot.targets_th, filenames[2])
+            powerPlot.save_noise(nonthermal_left, powerPlot.targets_nth, filenames[3])            
             powerPlot.save_product(thermal_left, powerPlot.targets_th, filenames[4])
             powerPlot.save_product(nonthermal_left, powerPlot.targets_nth, filenames[5])
-            # powerPlot.save_example(0.4, "data/"+dist_type+"_example.npz")
+            powerPlot.save_example(0.4, "data/"+dist_type+"_example.npz")
         # else:
         #     np.load()
 
@@ -913,3 +1078,9 @@ if __name__ == "__main__":
 
         fig = powerPlot.make_example_figure("data/"+dist_type+"_example.npz", make_eff=True, make_noise = True)
         plt.savefig("figs/"+dist_type+"_example"+fig_type, dpi = 500)
+
+        fig = powerPlot.make_crossing_figure(filenames[1], nonthermal_left)
+        plt.savefig("figs/"+dist_type+"_crossing"+fig_type, dpi = 500)
+        
+        fig = powerPlot.make_all_crossing_figure([filenames[1],filenames[3],filenames[5]], nonthermal_left)
+        plt.savefig("figs/"+dist_type+"_crossing_all"+fig_type, dpi = 500)
