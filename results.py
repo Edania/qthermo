@@ -4,7 +4,8 @@ import copy
 import utilities as ut
 
 from thermo_funcs import two_terminals
-
+from matplotlib.lines import Line2D
+from matplotlib.collections import PolyCollection
 from scipy.optimize import fsolve, minimize
 from scipy import integrate
 
@@ -114,24 +115,45 @@ class PowerPlot:
     def make_figure(self, make_eff = True, make_noise = True, make_product = True,
                     filenames = [None]*6):
         #make_list = [make_eff, make_noise, make_product]
-        fig, axs = plt.subplots(1, 3, figsize = (246*2*pt,200*pt), layout = "constrained")
+        # fig, axs = plt.subplots(2, 2, figsize = (col,col), layout = "constrained")
+        fig = plt.figure(figsize = (col,col), layout = "constrained")
+        figs = fig.subfigures(2, 2,width_ratios=[1, 1], height_ratios=[1, 1])
+        axs = [[subfig.subplots() for subfig in subfigs] for subfigs in figs]
         #fig.set_constrained_layout_pads(w_pad=0, h_pad=0, wspace=0, hspace=0)
+        axs[0][0].plot(Es - self.system_th.muR, self.system_nth.occupf_L(Es), label = "Nonthermal", color = nonthermal, zorder = 3)
+        axs[0][0].plot(Es- self.system_th.muR, self.system_th.occupf_L(Es), label = "Thermal", color = hot, zorder = 2)
+        axs[0][0].plot(Es- self.system_th.muR, self.system_th.occupf_R(Es), label = "Cold", color = cold, zorder = 1)
+        figs[0][0].set_facecolor("0.85")
+        axs[0][0].set_xlabel(r"$\varepsilon$ [$k_B T$]")
+        axs[0][0].set_ylabel("Occupation prob.")
+        axs[0][0].annotate("a)", (0.8,0.85), xycoords = "axes fraction")
+        axs[0][0].set_yticks([0.00,0.50,1.00],["0.00","0.50","1.00"])
         if make_eff:
-            self.eff_plot(axs[0], color = hot, label = "thermal",system = self.system_th,  filename = filenames[0])
-            self.eff_plot(system = self.system_nth, color = nonthermal, axs = axs[0], label = "nonthermal", filename=filenames[1])
-            
+            self.eff_plot(axs[0][1], color = hot, label = "thermal",system = self.system_th,  filename = filenames[0])
+            self.eff_plot(system = self.system_nth, color = nonthermal, axs = axs[0][1], label = "nonthermal", filename=filenames[1])
+            axs[0][1].annotate("b)", (0.8,0.85), xycoords = "axes fraction")
+            axs[0][1].locator_params(axis = "x", nbins = 3)
+            axs[0][1].set_yticks([0.50, 0.75, 1.00],["0.50", "0.75", "1.00"])
+            # self.eff_plot(system = self.system_nth, color = nonthermal, axs = axs[0,1], label = "nonthermal", filename=filenames[1])
             #axs[0].legend()
         if make_noise:
-            self.noise_plot(system=self.system_th, color = hot, axs=axs[1], label = "thermal", filename=filenames[2])
-            self.noise_plot(system=self.system_nth, color = nonthermal, axs=axs[1], label = "nonthermal", filename=filenames[3])
+            self.noise_plot(system=self.system_th, color = hot, axs=axs[1][0], label = "thermal", filename=filenames[2])
+            self.noise_plot(system=self.system_nth, color = nonthermal, axs=axs[1][0], label = "nonthermal", filename=filenames[3])
+            axs[1][0].annotate("c)", (0.1,0.85), xycoords = "axes fraction")
+            axs[1][0].locator_params(axis = "x", nbins = 3)
+            axs[1][0].set_yticks([0.00, 0.02,0.04,0.06],["0.00", "0.02","0.04","0.06"])
             #axs[1].legend()
         if make_product:
-            self.product_plot(system=self.system_th, color = hot, axs=axs[2], label = "thermal", filename=filenames[4])
-            self.product_plot(system=self.system_nth, color = nonthermal, axs=axs[2], label = "nonthermal", filename=filenames[5])
+            self.product_plot(system=self.system_th, color = hot, axs=axs[1][1], label = "thermal", filename=filenames[4])
+            self.product_plot(system=self.system_nth, color = nonthermal, axs=axs[1][1], label = "nonthermal", filename=filenames[5])
+            axs[1][1].annotate("d)", (0.1,0.85), xycoords = "axes fraction")
+            axs[1][1].locator_params(axis = "x", nbins = 3)
+            axs[1][1].set_yticks([0.00, 0.10],["0.00", "0.10"])
             #axs[2].legend()
-        lines, labels = axs[1].get_legend_handles_labels()
-        fig.legend(lines, labels, loc= "outside lower center", ncols = 2)#, bbox_to_anchor = (0.55,-0.1))
-        fig.text(1,1,"x")
+        lines, labels = axs[0][0].get_legend_handles_labels()
+        # axs[0][0].set_title("Mix of two thermal dists.")
+        fig.legend(lines, labels, loc= "outside lower center", ncols = 3)#, bbox_to_anchor = (0.55,-0.1))
+        # fig.text(1,1,"x")
         #plt.subplots_adjust(left=0.1)
         #plt.tight_layout()
         return fig
@@ -159,19 +181,23 @@ class PowerPlot:
         self.system_nth.adjust_limits(0.5)
         Es = np.linspace(self.system_nth.E_low, self.system_nth.E_high,10000)
         
-        fig, axs = plt.subplots(2,1,figsize= (col, 350*pt), layout = "constrained")
+        fig = plt.figure(figsize = (col,col), layout = "constrained")
+        figs = fig.subfigures(2, 1)
+        axs = [subfig.subplots() for subfig in figs]
+        # fig, axs = plt.subplots(2,1,figsize= (col, 350*pt), layout = "constrained")
+        
         axs[0].plot(Es- self.system_th.muR, self.system_nth.occupf_L(Es), label = "Nonthermal", color = nonthermal, zorder = 3)
         #axs[0].plot(Es, self.system_th.occupf_L(Es), label = "Thermal probe", color = hot, zorder = 2)
-        axs[0].plot(Es- self.system_th.muR, self.system_th.occupf_R(Es), label = "Cold thermal", color = cold, zorder = 2)
+        axs[0].plot(Es- self.system_th.muR, self.system_th.occupf_R(Es), label = "Cold", color = cold, zorder = 2)
         axs[0].vlines(self.system_nth.muR- self.system_th.muR, 0,1, colors = cold, alpha = 0.7, linestyles = "dashed")
-        axs[0].annotate(r"$\mu_R$", (self.system_nth.muR- self.system_th.muR, 0.7), textcoords = "offset points", xytext = (2,0), color = cold, alpha =0.7)
-        axs[0].annotate("No cooling", (0.1- self.system_th.muR, 0.7), color = "grey")
-        axs[0].fill_between(Es- self.system_th.muR, 1, where = transf_max(Es) == 0, facecolor = "lightgrey", zorder = 1)
-
-        axs[0].legend(loc = "lower left")
-        axs[0].set_xlabel(r"$\varepsilon$ [$k_B T_0$]")
-        axs[0].set_ylabel("Occupation probability")
-        
+        axs[0].annotate(r"$\mu$", (self.system_nth.muR- self.system_th.muR, 0.7), textcoords = "offset points", xytext = (2,0), color = cold, alpha =0.7)
+        # axs[0].annotate("No cooling", (0.1- self.system_th.muR, 0.7), color = "grey")
+        axs[0].fill_between(Es- self.system_th.muR, 1, where = transf_max(Es) == 0, facecolor = "lightgrey", zorder = 1, label = "No cooling")
+        axs[0].annotate("a)", (0.8,0.85), xycoords = "axes fraction")    
+        # figs[0].legend(loc = "outside center right", prop = {"size":10})
+        axs[0].set_xlabel(r"$\varepsilon$ [$k_B T$]")
+        axs[0].set_ylabel("Occupation prob.")
+        # axs[0].set_aspect("equal")
         file = np.load(example_file)
         
         
@@ -188,16 +214,28 @@ class PowerPlot:
             transf_noise = self.system_nth._transmission_noise(float(C_noise))
             #axs[1].plot(Es, transf_noise(Es), '--',color = "#7100b8", label = "Best precis.")
             axs[1].plot(Es- self.system_th.muR, transf_noise(Es), '--',color = "#58008F", label = "Best precis.")
-
+        axs[1].annotate("b)", (0.8,0.85), xycoords = "axes fraction")
         #axs[1].set_title("")
         #axs[1].plot(Es, transf_max(Es), '--',color = "#c870ff", label = "Max cooling")
-        axs[1].set_xlabel(r"$\varepsilon$ [$k_B T_0$]")
-        axs[1].set_ylabel("Transmission probability")
+        axs[1].set_xlabel(r"$\varepsilon$ [$k_B T$]")
+        axs[1].set_ylabel("Transmission func.")
+        # axs[1].set_aspect("equal")
         
-        axs[1].legend()
+        lines, labels = axs[0].get_legend_handles_labels()
+        line1 = Line2D([],[])
+        line1.update_from(lines[0])
+        line2 = Line2D([],[])
+        line2.update_from(lines[1])
+        line3 = PolyCollection([])
+        line3.update_from(lines[2])
+
+        fig.legend([line1, line2,line3], labels, loc = "outside right upper", prop = {"size":10}, frameon = False, labelspacing = 1)
+        
+        lines, labels = axs[1].get_legend_handles_labels()
+        fig.legend(lines, labels, loc = "outside center right", prop = {"size":10}, frameon = False, labelspacing = 1, bbox_to_anchor = (1,0.4))
         
 
-        fig.suptitle(r"Optimized transmission functions at 0.4 $I^{Q,R}_{\mathrm{max}}$")
+        # fig.suptitle(r"Optimized transmission functions at 0.4 $I^{Q,R}_{\mathrm{max}}$")
         #fig.suptitle("Transmission for maximized cooling with\n arbitrary nonthermal resource")
         return fig 
 
@@ -206,6 +244,11 @@ class PowerPlot:
         occupf_R = system.occupf_R
         C_pick = 250
         if type == "eff":
+
+            mosaic = """
+                AABB
+                .CC.
+            """
             JR_arr, data_arr, C_arr = self.get_eff_data(filename=filename)
             y = system.coeff_avg
             x = system.coeff_con
@@ -214,32 +257,39 @@ class PowerPlot:
             
 
             Es = np.linspace(system.E_low, system.E_high, 10000)
-            fig, axs = plt.subplots(1, 3, figsize = (246*2*pt, 150*pt), layout = "constrained")
+            fig = plt.figure(figsize = (col,0.8*col), layout = "constrained")
+            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+            axs = [ax for ax in ax_dict.values()]
+            # fig, axs = plt.subplots(1, 3, figsize = (2*col, 150*pt), layout = "constrained")
             axs[0].plot(Es - system.muR, occupf_L(Es), label = "Left", color = nonthermal)
             axs[0].plot(Es - system.muR, occupf_R(Es), label = "Right", color = cold)
             #axs[0].plot(Es-system.muR, system._transmission_avg(C_arr[10], x, y)(Es), label = "transf")
-            axs[0].fill_between(Es- system.muR, 1, where = factor_one(Es) > 0, facecolor = "lightgrey", zorder = 1)
-            axs[0].set_xlabel("Energy")
-            axs[0].set_xlabel(r"$\varepsilon - \mu$ [$k_B T_0$]")
+            axs[0].fill_between(Es- system.muR, 1, where = factor_one(Es) > 0, facecolor = "gray", alpha = 0.5, zorder = 1)
+            
+            axs[0].set_xlabel(r"$\varepsilon - \mu$ [$k_B T$]")
             axs[0].set_ylabel("Factor value")
+            axs[0].annotate("a)", (0.8,0.85), xycoords = "axes fraction")
+
             #axs[0].legend()
             
             #axs[0].grid()
-            axs[0].set_title("Occupation functions")
+            # axs[0].set_title("Occupation functions")
 
             axs[1].plot(Es-system.muR, -y(Es), label = "Left", color = nonthermal)
             axs[1].plot(Es-system.muR, -C_arr[C_pick]*x(Es), label = "Right", color = cold)
 
             #axs[1].plot(Es-system.muR, system._transmission_avg(C_arr[10], x, y)(Es), label = "transf")
-            axs[1].fill_between(Es- system.muR, 5, -5, where = factor_two(Es)[C_pick,:] < 0, facecolor = "lightgrey", zorder = 1)
-            axs[1].set_xlabel("Energy")
-            axs[1].set_xlabel(r"$\varepsilon - \mu$ [$k_B T_0$]")
+            axs[1].fill_between(Es- system.muR, 5, -5, where = factor_two(Es)[C_pick,:] < 0, facecolor = "gray", alpha = 0.5, zorder = 1)
+            
+            axs[1].set_xlabel(r"$\varepsilon - \mu$ [$k_B T$]")
             axs[1].set_ylabel("Factor value")
+            axs[1].annotate("b)", (0.1,0.85), xycoords = "axes fraction")
             #axs[1].legend()
-            axs[1].set_title("Coefficients")
+            # axs[1].set_title("Coefficients")
             #axs[1].grid()
             axs[2].fill_between(Es- system.muR, 0, 1, where = factor_two(Es)[C_pick,:] < 0, facecolor = "gray", zorder = 1, alpha = 0.5)
             axs[2].fill_between(Es- system.muR, 0, 1, where = factor_one(Es) > 0, facecolor = "gray", zorder = 1, alpha = 0.5)
+            axs[2].annotate("c)", (0.8,0.85), xycoords = "axes fraction")
             # fig = plt.figure(figsize=(246*pt, 200*pt), layout = "constrained")
             # plt.plot(Es, factor_one(Es)[10,:], label = "Factor one")
             # plt.plot(Es, factor_two(Es), label = "Factor two")
@@ -256,101 +306,91 @@ class PowerPlot:
         else:
             raise TypeError("Unrecognized type for crossing figure")
         
-    def make_all_crossing_figure(self, filenames, system:two_terminals):
-        fig, axs = plt.subplots(1,3,figsize=(246*2*pt, 200*pt))
-        JR_arr, data_arr, C_eff = self.get_eff_data(filename=filenames[0])
-        JR_arr, data_arr, C_noise = self.get_noise_data(filename=filenames[1])
-        JR_arr, data_arr, C_prod, err_arr = self.get_product_data(filename=filenames[2])
-        C_pick = int(len(C_eff)/2)
+    def make_all_crossing_figure(self, filenames, system:two_terminals, example_file = None):
+        fig, axs = plt.subplots(1,3,figsize=(2*col, 150*pt), layout = "constrained")
+        JR_arr, data_arr, C_eff_arr = self.get_eff_data(filename=filenames[0])
+        JR_arr, data_arr, C_noise_arr = self.get_noise_data(filename=filenames[1])
+        JR_arr, data_arr, C_prod_arr, err_arr = self.get_product_data(filename=filenames[2])
+        
+        if example_file:
+            file = np.load(example_file)
+            C_eff = file["C_avg"]
+            C_noise = file["C_noise"]
+            C_prod = file["prod_vector"]
+
+        else:
+            C_pick = int(len(C_eff_arr)/2)
+            C_eff = C_eff_arr[C_pick]
+            C_noise = C_noise_arr[C_pick]
+            C_prod = C_prod_arr[C_pick]
         
         # Es = np.linspace(system.E_low, system.E_high, 10000)
-        Es = np.linspace(-5, 5, 10000)
-        cond_eff = system._avg_condition(C_eff[C_pick], system.coeff_con, system.coeff_avg)
-        cond_noise = system._noise_condition(C_noise[C_pick])
-        #print(C_prod[C_pick])
-        # if type(C_prod[C_pick]) != np.array:
-        #     system.set_transmission_product_opt(C_prod[C_pick])
-        #     nois = system.noise_cont(system.coeff_noise)
-        #     avg = system._current_integral(system.coeff_avg)
-        #     cond_prod = system._product_condition([avg, nois, C_prod[C_pick]])
-        # else:    
-        # cond_prod = system._product_condition(C_prod[C_pick,:])
-        keep_index = np.argwhere(np.abs(err_arr) < 1e-4)
-        # print(JR_arr)
-        # JR_arr = JR_arr[keep_index]
-        # eff_arr = eff_arr[keep_index]
-        # print(C_prod)
-        #C_prod = C_prod[keep_index]
-        # print(C_prod[0])
-        # for i,C in enumerate(np.linspace(0,0.1,10)):
-        #     #cond_prod = system._product_condition([0.04944221649221684, 0.011044649928926384,0.09090909090909091])
-        cond_prod = system._product_condition(C_prod[C_pick].flatten())
-            # cond_prod = system._product_condition([0.01,0.01,C])
-        axs[2].plot(Es, cond_prod(Es))
-        
-        # cond_prod = system._product_condition([0.041313915835068674, 0.01578651849885714,0.09131313131313132])
-        # axs[2].plot(Es, cond_prod(Es), label = C)
-            #axs[0].plot(Es, np.heaviside(cond_eff(Es),0))
-        axs[0].plot(Es, cond_eff(Es))
-        axs[0].set_title("Eff cond")
+        system.adjust_limits(0.2)
+        Es = np.linspace(system.E_low, system.E_high, 10000)
+        cond_eff = system._avg_condition(C_eff, system.coeff_con, system.coeff_avg)
+        cond_noise = system._noise_condition(C_noise)
+        cond_prod = system._product_condition(C_prod.flatten())
+
+        max_cool = system.coeff_con(Es)*(system.occupf_L(Es)- system.occupf_R(Es))
+        max_cool = max_cool/np.max(np.abs(max_cool))
+        axs[0].plot(Es, cond_eff(Es)/np.max(np.abs(cond_eff(Es))), color = nonthermal)
+        # axs[0].set_title("Eff cond")
         axs[0].grid()
-        axs[1].plot(Es, cond_noise(Es))
-        axs[1].set_title("Noise cond")
-        axs[1].grid()
+        axs[0].set_yticks([0],[0])
+        axs[0].annotate("a)", (0.8,0.85), xycoords = "axes fraction")
+        axs[0].set_xlabel(r"$\varepsilon - \mu$ [$k_B T$]")
+        axs[0].plot(Es, max_cool, color = nonthermal, alpha = 0.5)
         
-        axs[2].set_title("Prod cond")
+        axs[1].plot(Es, cond_noise(Es)/np.max(np.abs(cond_noise(Es))), color = nonthermal)
+        # axs[1].set_title("Noise cond")
+        axs[1].set_yticks([0],[0])
+        axs[1].grid()
+        axs[1].annotate("b)", (0.8,0.85), xycoords = "axes fraction")
+        axs[1].plot(Es, max_cool, color = nonthermal, alpha = 0.5)
+        axs[1].set_xlabel(r"$\varepsilon - \mu$ [$k_B T$]")
+        
+        axs[2].plot(Es, cond_prod(Es)/np.max(np.abs(cond_prod(Es))), color = nonthermal)
+        # axs[2].set_title("Prod cond")
+        axs[2].set_xlabel(r"$\varepsilon - \mu$ [$k_B T$]")
+        axs[2].set_yticks([0],[0])
         #axs[2].legend()
+        axs[2].plot(Es, max_cool, color = nonthermal, alpha = 0.5)
         axs[2].grid()
+        axs[2].annotate("c)", (0.8,0.85), xycoords = "axes fraction")
+
         return fig
 
     def make_char_eff_figure(self, filename, system:two_terminals):
         occupf_L = system.occupf_L
         occupf_R = system.occupf_R
         occupdiff = lambda E: occupf_L(E) - occupf_R(E)
-        C_pick = 5
+        
         # if type == "eff":
-        JR_arr, data_arr, C_arr = self.get_eff_data(filename=filename)
+        # JR_arr, data_arr, C_arr = self.get_eff_data(filename=filename)
+        # C_pick = int(len(C_arr)/2)
+        # C = C_arr[C_pick]
+        file = np.load(filename)
+        C = file["C_avg"]
+
         y = system.coeff_avg
         x = system.coeff_con
-        factor_two = lambda E: y(E)-C_arr.reshape(-1,1)*x(E)
-        factor_one = lambda E: occupf_L(E)-occupf_R(E)
-        
 
+        
+        system.adjust_limits(0)
         #Es = np.linspace(system.E_low, system.E_high, 10000)
-        Es = np.linspace(-5, 5, 10000)
-        fig, axs = plt.subplots(1, 3, figsize = (246*2*pt, 150*pt), layout = "constrained")
-        axs[0].plot(Es - system.muR, x(Es)*occupdiff(Es), label = "con", color = nonthermal)
-        axs[0].plot(Es - system.muR, y(Es)*occupdiff(Es), label = "avg", color = cold)
-        #axs[0].plot(Es-system.muR, system._transmission_avg(C_arr[10], x, y)(Es), label = "transf")
-        # axs[0].fill_between(Es- system.muR, 1, where = factor_one(Es) > 0, facecolor = "lightgrey", zorder = 1)
-        axs[0].set_xlabel("Energy")
-        axs[0].set_xlabel(r"$\varepsilon - \mu$ [$k_B T_0$]")
-        axs[0].set_ylabel("Factor value")
-        #axs[0].legend()
+        Es = np.linspace(system.E_low, system.E_high, 10000)
+        fig, axs = plt.subplots(1, 1, figsize = (col, 150*pt), layout = "constrained")
+        axs = [axs]
+        axs[0].plot(Es-system.muR, x(Es)/y(Es)*np.heaviside(x(Es)*occupdiff(Es),0), label = "frac", color = nonthermal)
+        axs[0].fill_between(Es- system.muR, 0, 1, where = x(Es)*occupdiff(Es) < 0, facecolor = "gray", zorder = 1, alpha = 0.5)
+        axs[0].hlines(1/C, Es[0], Es[-1], colors = "black")
+        axs[0].annotate(r"$\eta_{\mathrm{min}}^{\mathrm{char}}$", (0.5, 1/C*1.2))
         
-        axs[0].grid()
-        axs[0].set_title("Occupation functions")
-
-        #axs[1].plot(Es-system.muR, np.heaviside(x(Es)/y(Es)-1/C_arr[C_pick],0), label = "frac", color = nonthermal)
-        axs[1].plot(Es-system.muR, x(Es)/y(Es)*np.heaviside(x(Es)*occupdiff(Es),0), label = "frac", color = cold)
-        # axs[1].plot(Es-system.muR, x(Es)/y(Es)*np.heaviside(y(Es)*occupdiff(Es),0), label = "frac", color = nonthermal)
-        # axs[1].plot(Es, x(Es), color = cold)
-        # axs[1].plot(Es, y(Es), color = nonthermal)
-        # axs[1].plot(Es-system.muR, C_arr[C_pick], label = "Right", color = cold)
-        axs[1].hlines(1/C_arr[C_pick], Es[0], Es[-1])
-        print(1/C_arr[C_pick])
-        # axs[1].set_ylim([0,1])
-
-        #axs[1].plot(Es-system.muR, system._transmission_avg(C_arr[10], x, y)(Es), label = "transf")
-        #axs[1].fill_between(Es- system.muR, 5, -5, where = factor_two(Es)[C_pick,:] < 0, facecolor = "lightgrey", zorder = 1)
-        axs[1].set_xlabel("Energy")
-        axs[1].set_xlabel(r"$\varepsilon - \mu$ [$k_B T_0$]")
-        axs[1].set_ylabel("Factor value")
+        axs[0].set_xlabel(r"$\varepsilon - \mu$ [$k_B T$]")
+        axs[0].set_ylabel("Characteristic efficiency")
         #axs[1].legend()
-        axs[1].set_title("Coefficients")
-        axs[1].grid()
-        axs[2].fill_between(Es- system.muR, 0, 1, where = factor_two(Es)[C_pick,:] < 0, facecolor = "gray", zorder = 1, alpha = 0.5)
-        axs[2].fill_between(Es- system.muR, 0, 1, where = factor_one(Es) > 0, facecolor = "gray", zorder = 1, alpha = 0.5)
+        # axs[0].set_title("Coefficients")
+        # axs[0].grid()
 
     def eff_plot(self, axs, color, label,system=None,filename = None):
         if self.verbose:
@@ -364,9 +404,9 @@ class PowerPlot:
         # print(C_arr[[112,113,114,115]])
         # print(JR_arr[[112,113,114,115]])
         #print(np.argwhere(JR_arr == 2.55085179e-02))
-        axs.set_title("Highest efficency")
-        axs.set_xlabel(r"$J_R$")
-        axs.set_ylabel(r"$\eta$ [$\dot S_R/\dot S_L$]")
+        # axs.set_title("Highest efficency")
+        axs.set_xlabel(r"$I^{Q,L}$ [$(k_B T)^2/h$]")
+        axs.set_ylabel(r"$\eta$ [$I^{\Sigma,L}/I^{\Sigma,R}$]")
         # axs.set_xlim([0, np.max(JR_arr)])
 
     def noise_plot(self,  axs, color, label,system=None,filename = None):
@@ -375,9 +415,9 @@ class PowerPlot:
 
         JR_arr, noise_arr, C_arr = self.get_noise_data(system, filename)
         axs.plot(JR_arr, noise_arr, label = label, color = color)
-        axs.set_title("Lowest noise")
-        axs.set_xlabel(r"$J_R$")
-        axs.set_ylabel(r"$S_{\dot S_R}$")
+        # axs.set_title("Lowest noise")
+        axs.set_xlabel(r"$I^{Q,L}$ [$(k_B T)^2/h$]")
+        axs.set_ylabel(r"$S^{Q,L}$ [$(k_B T)^2/h$]")
         # axs.set_xlim([0, np.max(JR_arr)])
 
     def product_plot(self,  axs, color, label,system=None,filename = None):
@@ -390,9 +430,9 @@ class PowerPlot:
         eff_arr = eff_arr[keep_index]
         # s_arr = s_arr[keep_index]
         axs.plot(JR_arr, eff_arr, label=label, color = color)
-        axs.set_title("Lowest noise-eff. fraction")
-        axs.set_xlabel(r"$J_R$")
-        axs.set_ylabel(r"$S_{\dot S_R}/ \eta$")
+        # axs.set_title("Lowest noise-eff. fraction")
+        axs.set_xlabel(r"$I^{Q,L}$ [$(k_B T)^2/h$]")
+        axs.set_ylabel(r"$S^{Q,L}/ \eta$ [$(k_B T)^2/h$]")
         # axs.set_xlim([0, np.max(JR_arr)])
 
     def produce_eff_data(self, system:two_terminals):
@@ -1019,7 +1059,8 @@ if __name__ == "__main__":
 
     save_data = False
     load_params = True
-    dist_type = "lorentz_peak_linear_norm"
+    # dist_type = "lorentz_peak"
+    dist_type = "two_thermal"
 
     if load_params:
         th_dist_params = np.load("data/th_params_"+dist_type+".npz")['arr_0']
@@ -1030,8 +1071,8 @@ if __name__ == "__main__":
         th_dist_params = np.array([muR, TR])
         # nth_dist_params = np.array([muL, TL, 0.1 ,0.3, 1])
         nth_dist_params = np.array([-2, 5, -0.5, 1.2])
-    occupf_L_nth = thermal_with_lorentz(*nth_dist_params)
-    # occupf_L_nth = two_thermals(*nth_dist_params)
+    # occupf_L_nth = thermal_with_lorentz(*nth_dist_params)
+    occupf_L_nth = two_thermals(*nth_dist_params)
     #dist_params = np.array([muL,TL,muR,TR])
 
 
@@ -1059,8 +1100,8 @@ if __name__ == "__main__":
     thermal_left.subdivide = True
     nonthermal_left.subdivide = True  
 
-    fig_type = ".png"
-    secondary = True
+    fig_type = "png"
+    secondary = False
     if secondary:
         secondary_prop = "muR"
         filenames = ["data/th_"+dist_type+"_eff_"+secondary_prop + ".npz","data/nth_"+dist_type+"_eff_"+secondary_prop + ".npz","data/th_"+dist_type+"_noise_"+secondary_prop + ".npz",
@@ -1095,7 +1136,7 @@ if __name__ == "__main__":
         # plt.savefig("figs/"+dist_type+"_"+secondary_prop+fig_type, dpi = 500)
 
         fig = secondaryPlot.make_eff_figure()
-        plt.savefig("figs/"+dist_type+"_"+secondary_prop+"_only_eff_"+fig_type, dpi = 500)
+        plt.savefig("figs/"+fig_type+"/"+dist_type+"_"+secondary_prop+"_only_eff_."+fig_type, dpi = 500)
 
         # JR_arr, avg_arr, noise_arr, C_arr, s_arr, err_arr =secondaryPlot.get_product_data(filename=filenames[5])
         # print(JR_arr)
@@ -1130,7 +1171,7 @@ if __name__ == "__main__":
         powerPlot = PowerPlot(thermal_left, nonthermal_left, True, n_targets=500)
 
         fig = powerPlot.make_dist_figure(-5,5)
-        plt.savefig("figs/"+dist_type+"_dist"+fig_type, dpi = 500)        
+        plt.savefig("figs/"+fig_type+"/"+dist_type+"_dist."+fig_type, dpi = 500)        
 
         filenames = ["data/th_"+dist_type+"_eff.npz","data/nth_"+dist_type+"_eff.npz","data/th_"+dist_type+"_noise.npz",
                     "data/nth_"+dist_type+"_noise.npz","data/th_"+dist_type+"_product.npz","data/nth_"+dist_type+"_product.npz"]
@@ -1151,21 +1192,21 @@ if __name__ == "__main__":
         
 
         fig = powerPlot.make_example_figure("data/"+dist_type+"_example.npz", make_eff=True, make_noise = True)
-        plt.savefig("figs/"+dist_type+"_example"+fig_type, dpi = 500)
+        plt.savefig("figs/"+fig_type+"/"+dist_type+"_example."+fig_type, dpi = 500)
 
         fig = powerPlot.make_figure(make_eff=True, make_noise=True, make_product=True, filenames=filenames)
         #plt.suptitle("Optimized plots for " + dist_type + r", metric $\dot S_R/\dot S_L$")
-        plt.suptitle("Optimized quantifiers over cooling power spectrum")
+        # plt.suptitle("Optimized quantifiers over cooling power spectrum")
         #plt.tight_layout()
-        plt.savefig("figs/"+dist_type+fig_type, dpi = 500)
+        plt.savefig("figs/"+fig_type+"/"+dist_type+"_opts."+fig_type, dpi = 500)
         fig = powerPlot.make_crossing_figure(filenames[1], nonthermal_left)
-        plt.savefig("figs/"+dist_type+"_crossing"+fig_type, dpi = 500)
+        plt.savefig("figs/"+fig_type+"/"+dist_type+"_crossing."+fig_type, dpi = 500)
         
-        fig = powerPlot.make_all_crossing_figure([filenames[1],filenames[3],filenames[5]], nonthermal_left)
-        plt.savefig("figs/"+dist_type+"_crossing_all"+fig_type, dpi = 500)
+        fig = powerPlot.make_all_crossing_figure([filenames[1],filenames[3],filenames[5]], nonthermal_left, example_file="data/"+dist_type+"_example.npz")
+        plt.savefig("figs/"+fig_type+"/"+dist_type+"_crossing_all."+fig_type, dpi = 500)
 
-        fig = powerPlot.make_char_eff_figure(filenames[1], nonthermal_left)
-        plt.savefig("figs/"+dist_type+"_char_eff"+fig_type, dpi = 500)
+        fig = powerPlot.make_char_eff_figure("data/"+dist_type+"_example.npz", nonthermal_left)
+        plt.savefig("figs/"+fig_type+"/"+dist_type+"_char_eff."+fig_type, dpi = 500)
         # # fig = plt.figure()
         # #JR_arr, noise_arr, C_arr, err_arr =powerPlot.get_product_data(filename=filenames[5])
         # JR_arr, eff_arr, C_arr = powerPlot.get_eff_data(filename=filenames[1])
