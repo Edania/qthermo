@@ -3,6 +3,7 @@ import numpy as np
 import copy
 import utilities as ut
 import matplotlib.pyplot as plt
+import warnings
 
 from scipy import integrate
 from scipy.optimize import minimize, fsolve
@@ -78,11 +79,11 @@ class two_terminals:
     def set_transmission_avg_opt(self, C, coeff_x, coeff_y):
         self.transf = self._transmission_avg(C, coeff_x, coeff_y)
 
-    def set_transmission_product_opt(self, C, alpha = 0.5):
+    def set_transmission_product_opt(self, C, alpha = 0.5, start_avg = None, start_noise = None):
 
-        calc_avg, calc_noise, err = self.calc_for_product_determined(C,alpha)
+        calc_avg, calc_noise, err = self.calc_for_product_determined(C,alpha, start_avg, start_noise)
         self.transf = self._transmission_product([calc_avg,calc_noise, C], alpha)
-        return err
+        return calc_avg, calc_noise, err
 
     def set_ready_transmission_product(self, C, alpha = 0.5):
         self.transf = self._transmission_product(C, alpha)
@@ -143,21 +144,22 @@ class two_terminals:
         occupdiff = lambda E: (self.occupf_L(E) - self.occupf_R(E))
         #roots = ut.root_finder(occupdiff, 3.4, 3.8, step, tol)
         #Es = np.linspace(self.E_low, self.E_high, 1000)
-        Es = np.linspace(self.E_low, self.E_high, 100000)
-        signed = np.sign(occupdiff(Es))
-        #print(signed[1:] - signed[:-1])
-        roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0).flatten()]
-        # print(roots_init)
-        if  len(roots_init) == 0:
-            Es = np.linspace(self.E_low-np.abs(self.E_low), self.E_high + np.abs(self.E_high), 1000)
-            signed = np.sign(occupdiff(Es))
-            #print(signed[1:] - signed[:-1])
-            roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0).flatten()]
-            # self.E_high += np.abs(self.E_high) if self.E_high != 0 else 1
-            # self.E_low -= np.abs(self.E_low) if self.E_low != 0 else 1
-            # #print(self.E_low, self.E_high)
+        # Es = np.linspace(self.E_low, self.E_high, 100000)
+        # signed = np.sign(occupdiff(Es))
+        # #print(signed[1:] - signed[:-1])
+        # roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0).flatten()]
+        # # print(roots_init)
+        # if  len(roots_init) == 0:
+        #     Es = np.linspace(self.E_low-np.abs(self.E_low), self.E_high + np.abs(self.E_high), 1000)
+        #     signed = np.sign(occupdiff(Es))
+        #     #print(signed[1:] - signed[:-1])
+        #     roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0).flatten()]
+        #     # self.E_high += np.abs(self.E_high) if self.E_high != 0 else 1
+        #     # self.E_low -= np.abs(self.E_low) if self.E_low != 0 else 1
+        #     # #print(self.E_low, self.E_high)
             # return self.find_occup_roots()
-        roots = ut.root_finder_guesses(occupdiff, roots_init,tol)
+        
+        roots = ut.root_finder_guesses(occupdiff, self.E_low, self.E_high,tol)
         return roots
     
     def set_occup_roots(self, step = 0.1, tol = 1e-3):
@@ -174,41 +176,50 @@ class two_terminals:
         # Reset to reasonable range
         
         
-        Es = np.linspace(self.E_low, self.E_high, 100000)
-        signed = np.sign(self.coeff_con(Es))
-        #print(signed[1:] - signed[:-1])
-        roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0)]
-        if len(roots_init) == 0:
-            Es = np.linspace(self.E_low- np.abs(self.E_low), self.E_high + np.abs(self.E_high), 100000)
-            signed = np.sign(self.coeff_con(Es))
-            #print(signed[1:] - signed[:-1])
-            roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0)]
-            #self.E_high += np.abs(self.E_high) if self.E_high != 0
+        # Es = np.linspace(self.E_low, self.E_high, 100000)
+        # signed = np.sign(self.coeff_con(Es))
+        # #print(signed[1:] - signed[:-1])
+        # roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0)]
+        # if len(roots_init) == 0:
+        #     Es = np.linspace(self.E_low- np.abs(self.E_low), self.E_high + np.abs(self.E_high), 100000)
+        #     signed = np.sign(self.coeff_con(Es))
+        #     #print(signed[1:] - signed[:-1])
+        #     roots_init = Es[np.argwhere(signed[1:] - signed[:-1] != 0)]
+        #     #self.E_high += np.abs(self.E_high) if self.E_high != 0
             #  else 1
             #self.E_low -= np.abs(self.E_low) if self.E_low != 0 else 1
             #print(self.E_low, self.E_high)
             #return self.constrained_current_max()
-        roots_con = ut.root_finder_guesses(self.coeff_con, roots_init,tol)        
+        roots_con = ut.root_finder_guesses(self.coeff_con, self.E_low, self.E_high,tol)        
         self.set_occup_roots()
         roots = roots_con + self.occuproots
         # Assert that we truly only have roots
 #        roots[func(roots) < 1e-6]
         transf = lambda E: np.heaviside(func(E),0)
+        # func_max = lambda E: func(E)*<
+        # print(roots)
+        # print(self.E_low, self.E_high)
+        # temp_Es = np.linspace(self.E_low, self.E_high, 100000)
 
-        jmax = self._current_integral(self.coeff_con, transf)
-        #print(transf(np.linspace(-0.5,1)))
+        # roots = ut.root_finder_guesses(func, self.E_low, self.E_high)
+        # print(roots)
+        jmax = self._current_integral(self.coeff_con, transf_in = transf, cond_in = None)
+        
         if return_roots_con:
             return jmax, transf, roots, roots_con    
         return jmax, transf, roots
 
-    def adjust_limits(self, factor = 0.5):
+    def adjust_limits(self, factor = 0.5, E_low_start = -1, E_high_start = 1):
         # Reset to reasonable range
-        self.E_low = -1
-        self.E_high = 35
+        self.E_low = E_low_start
+        self.E_high = E_high_start
         jmax, transf, roots = self.constrained_current_max()
         lowest = np.min(roots)
         highest = np.max(roots)
+        # if np.abs(lowest) > 1e-2:
         self.E_low = lowest - factor*np.abs(lowest)
+        # else:
+        #     self.E_low = -5
         self.E_high = highest + factor*np.abs(highest)
         # print("Roots: ", roots)
         # print("New limits: ",self.E_low, self.E_high)       
@@ -218,7 +229,7 @@ class two_terminals:
 
 
     #TODO: Fix subdivide. Just change E_low and E_high according to the limits of the cooling regime for now.
-    def _current_integral(self, coeff, transf_in = None):
+    def _current_integral(self, coeff, transf_in = None, cond_in = None):
         if transf_in == None:
             #print("In wrong place")
             transf = self.transf
@@ -226,12 +237,36 @@ class two_terminals:
             transf = transf_in     
         integrand = lambda E: self.N*1/h*coeff(E)*transf(E)*(self.occupf_L(E)- self.occupf_R(E))
         
-        if self.subdivide:
-            coarse_Es = np.linspace(self.E_low, self.E_high,10000)
-            coarse_E_lows = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == 1)]
+        if self.subdivide and cond_in != None:
+            #coarse_Es = np.linspace(self.E_low, self.E_high,100000)
+            #coarse_E_lows = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == 1)]
             #print(coarse_E_lows)
-            coarse_E_highs = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == -1)]
+            #test_transf = nonthermal_left._transmission_avg(C_arr[94], nonthermal_left.coeff_con, nonthermal_left.coeff_avg)
+            #test_cond = nonthermal_left._avg_condition(C_arr[94], nonthermal_left.coeff_con, nonthermal_left.coeff_avg)
+            # signed = np.sign(cond_in(coarse_Es))
+            # roots_init = coarse_Es[np.argwhere(signed[1:] - signed[:-1] != 0).flatten()]
+            roots = ut.root_finder_guesses(cond_in,self.E_low, self.E_high, tol = 1e-8)
+            roots = np.sort(roots)
+            current = 0
             
+            # Specifically for the entropy currents... check that there are roots between the first two. 
+            # if len(roots) == 4:
+
+            # if self.debug:
+            # print(roots)
+            if len(roots) == 0 or len(roots) % 2 != 0:
+                warnings.warn("No roots, reverting to regular integration", RuntimeWarning)
+                current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 1000)
+                return current
+            for i in range(0,len(roots),2):
+                tmp_curr = integrate.quad(integrand, roots[i], roots[i+1], args=(), points=self.occuproots, limit = 1000)[0]           
+                
+                # if self.debug:
+                #     print("In avg range")
+                #     print(tmp_curr)
+                
+                current +=  tmp_curr
+
         # if len(coarse_E_highs) == 0 and len(coarse_E_lows) == 0:
         #     coarse_Es = np.linspace(np.sign(self.E_low)*1.5*self.E_low, 0.2*self.E_high,10000)
         #     coarse_E_lows = coarse_Es[np.where(transf(coarse_Es[1:])- transf(coarse_Es[:-1]) == 1)]
@@ -241,30 +276,80 @@ class two_terminals:
             #print(len(coarse_E_highs))
             #print(coarse_E_highs)
             #g = 0.01
-            E_lows = 0.8*coarse_E_lows
-            E_highs = 1.2*coarse_E_highs
+            # E_lows = 0.8*coarse_E_lows
+            # E_highs = 1.2*coarse_E_highs
             #E_lows = [fsolve(lambda E: transf(E-g) + transf(E+g) - 1 , 0.9*coarse_E_low, factor=1) for coarse_E_low in coarse_E_lows]
             #E_highs = [fsolve(lambda E: transf(E-g) + transf(E+g) + 1, 0.9*coarse_E_high,factor=1) for coarse_E_high in coarse_E_highs]
             #print(E_lows)
             #print(E_highs)
-            current = 0
-            for i in range(len(E_lows)):
-                current_i, err = integrate.quad(integrand, E_lows[i], E_highs[i], args=(), points=self.occuproots)
-                current += current_i
+            # current = 0
+            # for i in range(len(E_lows)):
+            #     current_i, err = integrate.quad(integrand, E_lows[i], E_highs[i], args=(), points=self.occuproots)
+            #     current += current_i
         else:
-            current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 1000)
         return current
 
-    def noise_cont(self, coeff, transf = None):
+    def noise_cont(self, coeff, transf = None, only_thermal = True, cond_in = None):
         if transf == None:
             transf = self.transf
         thermal = lambda E: self.N*coeff(E)**2*transf(E)*(self.occupf_L(E)*(1-self.occupf_L(E))+ self.occupf_R(E)*(1-self.occupf_R(E)))
-        shot = lambda E: coeff(E)**2 * self.N**2*transf(E)*(1-transf(E))*(self.occupf_L(E)+self.occupf_R(E))**2
-        integrand = lambda E: thermal(E) + shot(E)
-        current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points = self.occuproots, limit = 100)
+        if not only_thermal:
+            shot = lambda E: coeff(E)**2 * self.N**2*transf(E)*(1-transf(E))*(self.occupf_L(E)+self.occupf_R(E))**2
+            integrand = lambda E: thermal(E) + shot(E)
+        else:
+            integrand = thermal
+
+        if self.subdivide:
+            
+            if cond_in == None:
+                raise TypeError("Condition function must be defined for subdivision")        
+            roots = ut.root_finder_guesses(cond_in,self.E_low, self.E_high)
+            current = 0
+            roots = np.sort(roots)
+            # if self.debug:
+            #     print(roots)
+            if len(roots) == 0 or len(roots) % 2 != 0:
+                warnings.warn("No roots, reverting to regular integration", RuntimeWarning)
+                current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points = self.occuproots, limit = 100)
+                return current
+            for i in range(0,len(roots),2):
+                tmp_curr = integrate.quad(integrand, roots[i], roots[i+1], args=(), points=self.occuproots, limit = 100)[0] 
+                
+                # if self.debug:
+                #     print("In Noise range")
+                #     print(tmp_curr)
+                
+                current += tmp_curr
+
+        else:
+            current, err = integrate.quad(integrand, self.E_low, self.E_high, args=(), points = self.occuproots, limit = 100)
         return current
     
-    def _avg_condition(self, C, coeff_x, coeff_y):
+    def general_integral(self, func, cond_in = None):
+        if self.subdivide and cond_in != None:
+            res = 0
+            roots = ut.root_finder_guesses(cond_in,self.E_low, self.E_high, tol = 1e-8)
+            roots = np.sort(roots)
+            
+            if len(roots) == 0 or len(roots) % 2 != 0:
+                warnings.warn("No roots, reverting to regular integration", RuntimeWarning)
+                res, err = integrate.quad(func, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            
+            else:
+                for i in range(0,len(roots),2):
+                    tmp_res = integrate.quad(func, roots[i], roots[i+1], args=(), points=self.occuproots, limit = 100)[0]           
+                    
+                    res +=  tmp_res           
+        else:
+            res, err = integrate.quad(func,self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+        
+        return res
+
+    def _avg_condition(self, C, coeff_x = None, coeff_y= None):
+        if coeff_x ==  None and coeff_y == None:
+            coeff_x = self.coeff_con
+            coeff_y = self.coeff_avg
         return lambda E: -(coeff_y(E) - C*coeff_x(E))*(self.occupf_L(E) - self.occupf_R(E))
 
     def _transmission_avg(self, C, coeff_x, coeff_y):
@@ -277,9 +362,11 @@ class two_terminals:
         #     print("C",C)
             # print("Con current", self._current_integral(coeff_x,transf))
         return transf
-    def C_limit_avg(self,coeff_nom, coeff_denom,h = 0.001):
+    def C_limit_avg(self,coeff_nom = None, coeff_denom= None,h = 0.001):
         #jmax, transfmax, roots = self.constrained_current_max()
+        
         roots = self.occuproots
+        print(roots)
         limit_list = []
         for root in roots:
             avg_high = lambda C: self._avg_condition(C,coeff_nom, coeff_denom)(root+h)
@@ -302,19 +389,19 @@ class two_terminals:
             coeff_denom = self.coeff_con
             coeff_nom = self.coeff_avg
             
-        def C_limiter(h = 0.001):
-            #jmax, transfmax, roots = self.constrained_current_max()
-            roots = self.occuproots
-            avg_high = lambda C: self._avg_condition(C,coeff_nom, coeff_denom)(roots[0]+h)
-            avg_low = lambda C: self._avg_condition(C, coeff_nom, coeff_denom)(roots[0]-h)
-            res = minimize(lambda C: np.abs(avg_high(C)-avg_low(C)),1)
-            if self.debug:
-                print("C limit: ", res.x)
-            return res.x
-        transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
-
+        # def C_limiter(h = 0.001):
+        #     #jmax, transfmax, roots = self.constrained_current_max()
+        #     roots = self.occuproots
+        #     avg_high = lambda C: self._avg_condition(C,coeff_nom, coeff_denom)(roots[0]+h)
+        #     avg_low = lambda C: self._avg_condition(C, coeff_nom, coeff_denom)(roots[0]-h)
+        #     res = minimize(lambda C: np.abs(avg_high(C)-avg_low(C)),1)
+        #     if self.debug:
+        #         print("C limit: ", res.x)
+        #     return res.x
+        # transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
+        C_limit = self.C_limit_avg(coeff_nom, coeff_denom)
         if C_init == None:
-            C_init = C_limiter()*10
+            C_init = C_limit*10
             # temp_Es = np.linspace(self.E_low, self.E_high, 100)
             # x_integrands = lambda E: coeff_nom(E)*(self.occupf_L(E)- self.occupf_R(E))
             # y_integrands = lambda E: coeff_denom(E)*(self.occupf_L(E)- self.occupf_R(E))
@@ -331,97 +418,21 @@ class two_terminals:
             # if self.debug:
             #     print("C_init: ", C_init)
 
-        if secondary:
-            if secondary_prop == "muR":
-                def updater(z):
-                    self.z = z
-                    self.muR = z
-                    self.set_fermi_dist_right()
-                    self.set_occup_roots()
-            elif secondary_prop == "TR":
-                def updater(z):
-                    self.z = z
-                    self.TR = z
-                    self.set_fermi_dist_right()
-                    self.set_occup_roots()
-            elif secondary_prop == "z":
-                assert(self.wrapper_occupf_L != None)
-                def updater(z):
-                    self.z = z
-                    self.update_occupf_L()
-                    self.set_occup_roots()
+        transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
+        C_limit = self.C_limit_avg(coeff_nom,coeff_denom)
+        def fixed_current_eq(C):
             
-            def fixed_current_eq(thetas):
-
-                C = thetas[0]
-                z = thetas[1]
-                #TODO: Better limits (when does the current go to zero?)
-                if C < C_limiter():
-                    return [1000,1000]
-
-                updater(z)
-
-                transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
-
-                current = self._current_integral(self.coeff_con,transf(C))
-                if self.debug:
-                    print("Current: ", current)
-                    print("C: ",C)
-                    print("z: ",z)
-                #
-                if current == 0:
-                     C = 2*C               
-                current = self._current_integral(self.coeff_con,transf(C))
-                if self.debug:
-                    print("Current new: ", current)
-
-                davg_integrand = lambda E: -self.coeff_avg(E)*transf(C)(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR)
-                dcon_integrand = lambda E: transf(C)(E)*((self.occupf_L(E)- self.occupf_R(E))/self.TR - self.coeff_con(E)*(self.occupf_R(E)**2 *(np.exp((E-self.muR)/self.TR))/self.TR))
-                davg_current, err = integrate.quad(davg_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-                dcon_current, err = integrate.quad(dcon_integrand, self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-                comp = davg_current/dcon_current
-                # self.z = z + h
-                # self.update_occupf_L()
-                # self.set_occup_roots()
-
-                # avg_high = self._current_integral(self.coeff_avg,transf(C))
-                # con_high = self._current_integral(self.coeff_con,transf(C))
-
-                # self.z = z - h
-                # self.update_occupf_L()
-                # self.set_occup_roots()
-
-                # avg_low = self._current_integral(self.coeff_avg,transf(C))
-                # con_low = self._current_integral(self.coeff_con,transf(C))
-
-
-                if self.debug:
-                    #print(avg_high-avg_low)
-                    #print(con_high-con_low)
-                    print("Diff div: ",(davg_current)/(dcon_current))
-
-                return [self._current_integral(self.coeff_con,transf(C)) - target, comp - C]
-            res = fsolve(fixed_current_eq,[C_init, self.muR], factor = 0.1, xtol = 1e-6)
-            updater(res[1])
-            self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
-            print(self._current_integral(self.coeff_con))
-            return res
-
-
-        else:
-            C_limit = self.C_limit_avg(coeff_nom,coeff_denom)
-            def fixed_current_eq(C):
-                if C < C_limit:
-                    return 1000
-                current = self._current_integral(self.coeff_con,transf(C)) - target
-                if self.debug:
-                    print("C: ",C)
-                    print("current: ", current)
-                return current
-            res = fsolve(fixed_current_eq,C_init, factor = 0.1, xtol = 1e-6)
-            self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
-            err = fixed_current_eq(res[0])
-            return res[0], err
+            if C < C_limit:
+                return 1000
+            current = self._current_integral(self.coeff_con,transf(C), self._avg_condition(C, coeff_nom, coeff_denom)) - target
+            if self.debug:
+                print("C: ",C)
+                print("current: ", current)
+            return current
+        res = fsolve(fixed_current_eq,C_init, factor = 0.1, xtol = 1e-6)
+        self.transf = self._transmission_avg(res[0], coeff_nom, coeff_denom)
+        err = fixed_current_eq(res[0])
+        return res[0], err
 
 
     def optimize_for_best_avg(self,C_init = 1, fixed = "nominator", secondary_prop = "muR", left_current = "entropy"):
@@ -433,7 +444,7 @@ class two_terminals:
             coeff_denom = self.coeff_con
             coeff_nom = self.coeff_avg
 
-        transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
+        
         
         C_limit = self.C_limit_avg(coeff_nom, coeff_denom)
         if secondary_prop == "muR":
@@ -468,51 +479,54 @@ class two_terminals:
             print("Invalid secondary prop")
             return -1
     
-
+        transf = lambda C: self._transmission_avg(C, coeff_nom, coeff_denom)
         def func(C, set_Es = False):
             if C < C_limit:
                 return 1000
 
-            dL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-            dR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
-            k = 10
-            if dL_integ == 0.0 or dR_integ == 0.0:
-                if self.debug:
-                    print("In while loop")
-                
-                # self.E_low = 0.8*self.E_low# + np.abs(self.E_low)
-                # self.E_high = 0.8*self.E_high# - np.abs(self.E_high)
-                # #return func(C)
-                tempEs = np.linspace(self.E_low, self.E_high, 100000)
-                signed = np.sign(d_right(transf(C))(tempEs)).flatten()
-                #print(signed)
-                roots_init = tempEs[np.argwhere(signed[1:] - signed[:-1] != 0)].flatten()
-                #print(roots_init)
-                #rint(self.TR)
-                # self.E_low = (1-1/k)*roots_init[0]
-                # self.E_high = (1+1/k)*roots_init[-1]
-                if set_Es:
-                    self.E_low = roots_init[0]
-                    self.E_high = roots_init[-1]
+            # dL_integ, err = integrate.quad(d_left(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            # dR_integ, err = integrate.quad(d_right(transf(C)),self.E_low, self.E_high, args=(), points=self.occuproots, limit = 100)
+            dL_integ = self.general_integral(d_left(transf(C)), self._avg_condition(C, self.coeff_con, self.coeff_avg))
+            dR_integ = self.general_integral(d_right(transf(C)), self._avg_condition(C, self.coeff_con, self.coeff_avg))
 
-                #print(self.E_low, self.E_high)
-                # plt.plot(tempEs, np.heaviside(d_left(transf(C))(tempEs),0))
-                # plt.plot(tempEs, np.heaviside(d_right(transf(C))(tempEs),0))
-                # plt.show()
-                # #return 1000
-                # _, _, roots = self.constrained_current_max()
-                # lowest = np.min(roots)
-                # highest = np.max(roots)
-                # if self.debug:
-                #     print("increasing C")
-                # C = 1.5*C
-                # #C_zeros =
-                #self.adjust_limits(-(1-1/k)) 
-                dL_integ, err = integrate.quad(d_left(transf(C)),roots_init[0], roots_init[-1], args=(), points=self.occuproots, limit = 100)
-                dR_integ, err = integrate.quad(d_right(transf(C)),roots_init[0], roots_init[-1], args=(), points=self.occuproots, limit = 100)
-                if self.debug:
-                    print(roots_init)
-                    print(dL_integ, dR_integ)
+            # k = 10
+            # if dL_integ == 0.0 or dR_integ == 0.0:
+            #     if self.debug:
+            #         print("In while loop")
+                
+            #     # self.E_low = 0.8*self.E_low# + np.abs(self.E_low)
+            #     # self.E_high = 0.8*self.E_high# - np.abs(self.E_high)
+            #     # #return func(C)
+            #     tempEs = np.linspace(self.E_low, self.E_high, 100000)
+            #     signed = np.sign(d_right(transf(C))(tempEs)).flatten()
+            #     #print(signed)
+            #     roots_init = tempEs[np.argwhere(signed[1:] - signed[:-1] != 0)].flatten()
+            #     #print(roots_init)
+            #     #rint(self.TR)
+            #     # self.E_low = (1-1/k)*roots_init[0]
+            #     # self.E_high = (1+1/k)*roots_init[-1]
+            #     if set_Es:
+            #         self.E_low = roots_init[0]
+            #         self.E_high = roots_init[-1]
+
+            #     #print(self.E_low, self.E_high)
+            #     # plt.plot(tempEs, np.heaviside(d_left(transf(C))(tempEs),0))
+            #     # plt.plot(tempEs, np.heaviside(d_right(transf(C))(tempEs),0))
+            #     # plt.show()
+            #     # #return 1000
+            #     # _, _, roots = self.constrained_current_max()
+            #     # lowest = np.min(roots)
+            #     # highest = np.max(roots)
+            #     # if self.debug:
+            #     #     print("increasing C")
+            #     # C = 1.5*C
+            #     # #C_zeros =
+            #     #self.adjust_limits(-(1-1/k)) 
+            #     dL_integ, err = integrate.quad(d_left(transf(C)),roots_init[0], roots_init[-1], args=(), points=self.occuproots, limit = 100)
+            #     dR_integ, err = integrate.quad(d_right(transf(C)),roots_init[0], roots_init[-1], args=(), points=self.occuproots, limit = 100)
+            #     if self.debug:
+            #         print(roots_init)
+            #         print(dL_integ, dR_integ)
                 # k += 1
                 # if k == 11:
                 #     break
@@ -636,8 +650,6 @@ class two_terminals:
         return res[0], func(res[0])
     
     def optimize_for_best_product(self,C_init = 1, alpha = 0.5, secondary_prop = "muR"):
-        
-        
         C_limit = self.C_limit_noise()
         if secondary_prop == "muR":
             d_noise = self.dnoiseSR_dmuR
@@ -691,6 +703,7 @@ class two_terminals:
         # frac = (calc_avg*dnoise_integ + calc_noise*dL_integ)/dR_integ
         # print(C- frac)
         return [calc_avg, calc_noise, C],func(C)
+    
     def _product_condition(self,thetas, alpha = 0.5):
         con_avg = thetas[0]
         con_noise = thetas[1]
@@ -714,9 +727,9 @@ class two_terminals:
         if thetas_init == None:
             max_transf = lambda E: np.heaviside(self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
             self.transf = max_transf
-            max_noise = self.noise_cont(self.coeff_noise)
-            max_avg = self._current_integral(self.coeff_avg)
-            max_con= self._current_integral(self.coeff_con)
+            # max_noise = self.noise_cont(self.coeff_noise)
+            # max_avg = self._current_integral(self.coeff_avg)
+            # max_con= self._current_integral(self.coeff_con)
             # temp_Es = np.linspace(self.E_low, self.E_high, 100)
             # con_integrands = lambda E: self.coeff_con(E)*(self.occupf_L(E)- self.occupf_R(E))
             # avg_integrands = lambda E: self.coeff_avg(E)*(self.occupf_L(E)- self.occupf_R(E))
@@ -747,9 +760,9 @@ class two_terminals:
             if any(thetas < 0):
                 return 1000,1000,1000
             transf = self._transmission_product(thetas)
-            nois = self.noise_cont(self.coeff_noise, transf)
-            avg = self._current_integral(self.coeff_avg, transf)
-            con = self._current_integral(self.coeff_con, transf)
+            nois = self.noise_cont(self.coeff_noise, transf, cond_in = self._product_condition(thetas, alpha))
+            avg = self._current_integral(self.coeff_avg, transf, cond_in = self._product_condition(thetas, alpha))
+            con = self._current_integral(self.coeff_con, transf, cond_in = self._product_condition(thetas, alpha))
             if self.debug: 
                 pass
                 # print("Thetas: ", thetas)
@@ -762,7 +775,7 @@ class two_terminals:
         self.transf = self._transmission_product(res)
         return res, err
 
-    def calc_for_product_determined(self, C, alpha = 0.5):
+    def calc_for_product_determined(self, C, alpha = 0.5, start_avg = None, start_noise = None):
         # max_transf = lambda E: np.heaviside(self.coeff_con(E)*(self.occupf_L(E) - self.occupf_R(E)),0)
         # self.transf = max_transf
         # max_noise = self.noise_cont(self.coeff_noise)
@@ -774,23 +787,23 @@ class two_terminals:
             if any(thetas < 0):
                 return 1000,1000
             transf = self._transmission_product([con_avg, con_noise, C], alpha)
-            nois = self.noise_cont(self.coeff_noise, transf)
-            avg = self._current_integral(self.coeff_avg, transf)
+            nois = self.noise_cont(self.coeff_noise, transf, cond_in = self._product_condition([con_avg, con_noise, C], alpha))
+            avg = self._current_integral(self.coeff_avg, transf, cond_in = self._product_condition([con_avg, con_noise, C], alpha))
             #con = self._current_integral(self.coeff_con, transf)
-            if nois == 0.0 or avg == 0.0:
-                temp_Es = np.linspace(self.E_low, self.E_high, 100000) 
-                if any(transf(temp_Es) == 1):
-                    temp_E_low = self.E_low
-                    temp_E_high = self.E_high
-                    limits = temp_Es[np.argwhere(transf(temp_Es)[1:] - transf(temp_Es)[:-1] != 0).flatten()]
-                    self.E_low = limits[0]*0.95
-                    self.E_high = limits[-1]*1.05
-                    nois = self.noise_cont(self.coeff_noise, transf)
-                    avg = self._current_integral(self.coeff_avg, transf)
-                    self.E_low = temp_E_low
-                    self.E_high = temp_E_high
-                else:
-                    pass
+            # if nois == 0.0 or avg == 0.0:
+            #     temp_Es = np.linspace(self.E_low, self.E_high, 100000) 
+            #     if any(transf(temp_Es) == 1):
+            #         temp_E_low = self.E_low
+            #         temp_E_high = self.E_high
+            #         limits = temp_Es[np.argwhere(transf(temp_Es)[1:] - transf(temp_Es)[:-1] != 0).flatten()]
+            #         self.E_low = limits[0]*0.95
+            #         self.E_high = limits[-1]*1.05
+            #         nois = self.noise_cont(self.coeff_noise, transf)
+            #         avg = self._current_integral(self.coeff_avg, transf)
+            #         self.E_low = temp_E_low
+            #         self.E_high = temp_E_high
+            #     else:
+            #         pass
 
             if self.debug: 
                 #temp_Es = np.linspace(self.E_low, self.E_high, 100000) 
@@ -801,10 +814,17 @@ class two_terminals:
                 print("Avg: ", avg)
                 print("opt func: ", avg - con_avg, nois - con_noise)
             return avg - con_avg, nois - con_noise
-        calc_avg, calc_noise = fsolve(opt_func, [0.01, 0.01], factor = 0.1)
+        if start_avg == None or start_noise == None:
+            start_avg = np.random.uniform(0,0.005)
+            start_noise = np.random.uniform(0,0.005)
+        # Generally, the noise tends to be much lower than the average current we get out, so this is a decent guess. 
+        calc_avg, calc_noise = fsolve(opt_func, [start_avg,start_noise], factor = 0.1)
         #print(opt_func(np.array([calc_avg, calc_noise, C])))
         #print(calc_avg, calc_noise)
         err = np.max(np.abs(opt_func(np.array([calc_avg, calc_noise, float(C)]))))
+        # print(start_avg, start_noise)
+        # print(calc_avg, calc_noise)
+        print(calc_avg, calc_noise)
         return calc_avg,calc_noise, err
 
     def carnot(self):
